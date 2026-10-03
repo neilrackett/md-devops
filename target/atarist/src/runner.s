@@ -62,6 +62,7 @@ RUNNER_PROTO_VERSION		equ $00010001	; min=1, max=1
 ; CMD_START_RUNNER=5) live in the [0..15] range; Runner-namespace
 ; commands live at $0500 + N to avoid collisions.
 CMD_NOP				equ 0
+CMD_START_TSR			equ 6	; main.s' TSR dispatch; arrives in d6
 APP_RUNNER			equ $0500
 RUNNER_CMD_EXECUTE		equ ($02 + APP_RUNNER)	; Pexec mode 0
 RUNNER_CMD_CD			equ ($03 + APP_RUNNER)	; Dsetpath
@@ -216,7 +217,10 @@ ADV_HOOK_VECTOR			equ ADV_HOOK_VECTOR_ETV_TIMER
 
 ; ---------------------------------------------------------------
 ; Entry point — offset 0 of the runner blob. Reached via
-; `jmp RUNNER_BLOB` from main.s's check_commands dispatch.
+; `jmp RUNNER_BLOB` from main.s's check_commands dispatch, or via
+; `jsr RUNNER_BLOB` from tsr_function. d6 holds the dispatching
+; sentinel value; with CMD_START_TSR the Runner installs its hook,
+; sends HELLO and returns instead of entering the poll loop.
 ; ---------------------------------------------------------------
 
 runner_entry:
@@ -274,7 +278,10 @@ runner_post_reloc:
 	; current drive onto the GEMDRIVE-emulated drive and Dsetpath the
 	; cwd back to root. The RP-side mirror clears its cwd on HELLO
 	; below, so relative `runner cd` / `runner run` always resolve
-	; from the same baseline on both sides. ---
+	; from the same baseline on both sides. TSR mode skips it: TOS
+	; boots on from here, and DEVOPS.ACC keeps its own cwd. ---
+	cmp.w	#CMD_START_TSR, d6
+	beq.s	.skip_cwd_baseline
 	move.l	DRIVE_NUMBER_ADDR, d3
 	move.w	d3, -(sp)
 	move.w	#GEMDOS_Dsetdrv, -(sp)
@@ -285,6 +292,7 @@ runner_post_reloc:
 	move.w	#GEMDOS_Dsetpath, -(sp)
 	trap	#1
 	addq.l	#6, sp
+.skip_cwd_baseline:
 
 	; --- Step 0.5: install the Advanced Runner
 	; hook at the vector chosen by the RP-side aconfig setting. The
@@ -340,6 +348,13 @@ runner_post_reloc:
 	ori.l	#$FF00, d3			; bits 8..15 = 0xFF (unknown)
 .adv_hello_send:
 	send_sync RUNNER_CMD_DONE_HELLO, 4
+
+	; TSR mode ends here: back to main.s' tsr_function, which lets TOS
+	; boot on. send_sync restores d6, so it still holds the dispatch.
+	cmp.w	#CMD_START_TSR, d6
+	bne.s	.foreground
+	rts
+.foreground:
 
 	; --- Step 1: clear screen + paint banner (single Cconws — the
 	; banner_text string leads with VT52 ESC E). ---

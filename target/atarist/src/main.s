@@ -51,7 +51,7 @@ TRANSTABLE		equ APP_BUFFERS_ADDR				; high-res translation table
 ;   $0000..$07FF  main.s     2 KB   boot + dispatch + terminal
 ;   $0800..$1BFF  gemdrive.s 5 KB   GEMDRIVE blob (relocated to RAM)
 ;   $1C00..$27FF  runner.s   3 KB   Runner foreground loop
-; On mode-commit (rom_function or runner_function reached from the
+; On mode-commit (rom_function, runner_function or tsr_function reached from the
 ; setup-menu polling), gemdrive_install copies GEMDRIVE_BLOB_SIZE
 ; bytes from GEMDRIVE_BLOB into a configurable RAM address (default
 ; screen_base - 16 KB) so the resident GEMDRIVE code can survive
@@ -95,6 +95,7 @@ CMD_BOOT_GEM		equ 2		; Boot GEM command
 CMD_TERMINAL		equ 3		; Terminal command
 CMD_START			equ 4		; Hand control to GEMDRIVE (rom_function)
 CMD_START_RUNNER	equ 5		; Hand control to the Runner (runner_function)
+CMD_START_TSR		equ 6		; Install resident and boot on (tsr_function)
 
 ; GEMDRIVE app namespace. Wire-format compatible with md-drives-emulator:
 ; APP_GEMDRVEMUL keeps the same value; CMD_GEMDRVEMUL_* values that exist
@@ -228,6 +229,8 @@ check_commands		macro
 					beq rom_function			; If it is, jump to the user firmware dispatcher
 					cmp.l #CMD_START_RUNNER, d6	; Check if the command hands over to the Runner
 					beq runner_function			; If it is, jump to the Runner blob entry
+					cmp.l #CMD_START_TSR, d6	; Check if the command installs TSR mode
+					beq tsr_function			; If it is, install and let TOS boot on
 
 					; If we are here, the command is a NOP
 					; If the command is a NOP, check the shift keys to bypass the command
@@ -407,6 +410,18 @@ runner_function:
     jsr gemdrive_install
     jmp RUNNER_BLOB
 
+; Dispatcher invoked on CMD_START_TSR — the user pressed [S]. Installs
+; GEMDRIVE and the Runner's interrupt hook, then lets TOS boot on through
+; the AUTO folder to the desktop, where DEVOPS.ACC serves the foreground
+; Runner commands. runner_entry tells this from [U] by d6, which still
+; holds the sentinel value that dispatched us (gemdrive_install preserves
+; it), and returns instead of entering its poll loop. The GEMDRIVE banner
+; at +4 then returns to TOS, as on the [G] path.
+tsr_function:
+    jsr gemdrive_install
+    jsr RUNNER_BLOB
+    jmp GEMDRIVE_BLOB+4
+
 ; Shared functions included at the end of the file
 ; Don't forget to include the macros for the shared functions at the top of file
 ;
@@ -505,7 +520,7 @@ gemdrive_handshake:
 
 ; gemdrive_install — deferred GEMDRIVE relocation + trap-#1 install.
 ; -----------------------------------------------------------------------
-; Called from rom_function and runner_function once the user has
+; Called from rom_function, runner_function and tsr_function once the user has
 ; committed a mode at the setup menu (or the autoboot countdown
 ; elapsed). Reads the effective reloc + memtop that gemdrive_handshake
 ; published into shared variables, copies the GEMDRIVE blob to the
@@ -518,8 +533,8 @@ gemdrive_handshake:
 ; relocated print-loop reach this routine via absolute-long jsr.
 ;
 ; Called exactly once per ST cold reset: each user mode-commit fires
-; one of the two dispatchers, which calls this routine, after which
-; either the diagnostic (rom_function) or runner_entry
+; one of the three dispatchers, which calls this routine, after which
+; the diagnostic (rom_function, tsr_function) or runner_entry
 ; (runner_function) takes over and never returns to the menu.
 gemdrive_install:
 	movem.l d0-d7/a0-a3, -(sp)

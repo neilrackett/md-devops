@@ -1362,6 +1362,8 @@ static const char *runner_last_command_str(runner_last_command_t cmd) {
 // commands land.
 static void handle_runner_status(http_conn_t *c) {
   bool active = emul_isRunnerActive();
+  bool tsr = emul_isRunnerTsrMode();
+  bool accessory = emul_isRunnerAccessoryAttached();
   bool busy = emul_isRunnerBusy();
   const char *last_cmd = runner_last_command_str(emul_getRunnerLastCommand());
   const char *last_path = emul_getRunnerLastPath();
@@ -1432,10 +1434,11 @@ static void handle_runner_status(http_conn_t *c) {
     snprintf(last_load_errno_buf, sizeof(last_load_errno_buf), "null");
   }
 
-  static char body[640];
+  static char body[704];
   int n = snprintf(
       body, sizeof(body),
-      "{\"ok\":true,\"active\":%s,\"busy\":%s,\"cwd\":\"%s\","
+      "{\"ok\":true,\"active\":%s,\"tsr\":%s,\"accessory\":%s,"
+      "\"busy\":%s,\"cwd\":\"%s\","
       "\"last_command\":%s%s%s,"
       "\"last_path\":%s%s%s,"
       "\"last_exit_code\":%s,"
@@ -1445,6 +1448,8 @@ static void handle_runner_status(http_conn_t *c) {
       "\"last_load_errno\":%s,"
       "\"last_started_at_ms\":%s,\"last_finished_at_ms\":%s}\n",
       active ? "true" : "false",
+      tsr ? "true" : "false",
+      accessory ? "true" : "false",
       busy ? "true" : "false",
       (cwd != NULL) ? cwd : "",
       (last_cmd != NULL) ? "\"" : "",
@@ -1558,6 +1563,19 @@ static void runner_write_cmdline(const char *cmdline) {
   }
 }
 
+// In TSR mode the foreground Runner commands are served by DEVOPS.ACC,
+// which GEM only starts once the ST has booted to the desktop. Until it
+// reports in there is nothing on the ST to pick a command up.
+static bool runner_require_accessory(http_conn_t *c) {
+  if (!emul_isRunnerTsrMode() || emul_isRunnerAccessoryAttached()) {
+    return true;
+  }
+  write_error(c, 409, "Conflict", "accessory_not_loaded",
+              "TSR mode: DEVOPS.ACC has not started; GEM loads it from the "
+              "root of the boot drive once the ST reaches the desktop");
+  return false;
+}
+
 // POST /api/v1/runner/run —
 //
 // JSON body: {"path": "<rel>", "cmdline": "<≤127>"}.
@@ -1570,9 +1588,10 @@ static void runner_write_cmdline(const char *cmdline) {
 static void handle_runner_run(http_conn_t *c) {
   if (!emul_isRunnerActive()) {
     write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner mode is not active; boot via [U] first");
+                "Runner mode is not active; boot via [U] or [S] first");
     return;
   }
+  if (!runner_require_accessory(c)) return;
   if (emul_isRunnerBusy()) {
     write_response_ex(c, 503, "Service Unavailable", "application/json",
                       "Retry-After: 1\r\n",
@@ -1712,9 +1731,10 @@ static void handle_runner_run(http_conn_t *c) {
 static void handle_runner_load(http_conn_t *c) {
   if (!emul_isRunnerActive()) {
     write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner mode is not active; boot via [U] first");
+                "Runner mode is not active; boot via [U] or [S] first");
     return;
   }
+  if (!runner_require_accessory(c)) return;
   if (emul_isRunnerBusy()) {
     write_response_ex(c, 503, "Service Unavailable", "application/json",
                       "Retry-After: 1\r\n",
@@ -1878,9 +1898,10 @@ static void handle_runner_load(http_conn_t *c) {
 static void handle_runner_exec(http_conn_t *c) {
   if (!emul_isRunnerActive()) {
     write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner mode is not active; boot via [U] first");
+                "Runner mode is not active; boot via [U] or [S] first");
     return;
   }
+  if (!runner_require_accessory(c)) return;
   if (emul_isRunnerBusy()) {
     write_response_ex(c, 503, "Service Unavailable", "application/json",
                       "Retry-After: 1\r\n",
@@ -1931,9 +1952,10 @@ static void handle_runner_exec(http_conn_t *c) {
 static void handle_runner_unload(http_conn_t *c) {
   if (!emul_isRunnerActive()) {
     write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner mode is not active; boot via [U] first");
+                "Runner mode is not active; boot via [U] or [S] first");
     return;
   }
+  if (!runner_require_accessory(c)) return;
   if (emul_isRunnerBusy()) {
     write_response_ex(c, 503, "Service Unavailable", "application/json",
                       "Retry-After: 1\r\n",
@@ -2004,9 +2026,10 @@ static void handle_runner_unload(http_conn_t *c) {
 static void handle_runner_cd(http_conn_t *c) {
   if (!emul_isRunnerActive()) {
     write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner mode is not active; boot via [U] first");
+                "Runner mode is not active; boot via [U] or [S] first");
     return;
   }
+  if (!runner_require_accessory(c)) return;
   if (emul_isRunnerBusy()) {
     write_response_ex(c, 503, "Service Unavailable", "application/json",
                       "Retry-After: 1\r\n",
@@ -2149,7 +2172,12 @@ static void runner_write_rez(uint16_t rez) {
 static void handle_runner_res(http_conn_t *c) {
   if (!emul_isRunnerActive()) {
     write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner mode is not active; boot via [U] first");
+                "Runner mode is not active; boot via [U] or [S] first");
+    return;
+  }
+  if (emul_isRunnerTsrMode()) {
+    write_error(c, 409, "Conflict", "unsupported_in_tsr",
+                "TSR mode: changing resolution under GEM is not supported");
     return;
   }
   if (emul_isRunnerBusy()) {
@@ -2240,7 +2268,7 @@ static void handle_runner_res(http_conn_t *c) {
 static void handle_runner_adv_jump(http_conn_t *c) {
   if (!emul_isRunnerActive()) {
     write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner mode is not active; boot via [U] first");
+                "Runner mode is not active; boot via [U] or [S] first");
     return;
   }
   if (emul_getRunnerAdvHookVector() != RUNNER_HOOK_VECTOR_VBL) {
@@ -2446,7 +2474,7 @@ static bool handle_runner_adv_load_init(http_conn_t *c, struct pbuf *seg,
                                         size_t body_off, size_t leftover) {
   if (!emul_isRunnerActive()) {
     write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner mode is not active; boot via [U] first");
+                "Runner mode is not active; boot via [U] or [S] first");
     return false;
   }
   if (emul_getRunnerAdvHookVector() != RUNNER_HOOK_VECTOR_VBL) {
@@ -2583,7 +2611,7 @@ static bool handle_runner_adv_load_init(http_conn_t *c, struct pbuf *seg,
 static void handle_runner_adv_meminfo(http_conn_t *c) {
   if (!emul_isRunnerActive()) {
     write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner mode is not active; boot via [U] first");
+                "Runner mode is not active; boot via [U] or [S] first");
     return;
   }
 
@@ -2800,7 +2828,7 @@ static void handle_debug_log(http_conn_t *c) {
 static void handle_runner_meminfo(http_conn_t *c) {
   if (!emul_isRunnerActive()) {
     write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner mode is not active; boot via [U] first");
+                "Runner mode is not active; boot via [U] or [S] first");
     return;
   }
   if (emul_isRunnerBusy()) {
@@ -2814,7 +2842,9 @@ static void handle_runner_meminfo(http_conn_t *c) {
 
   uint32_t now_ms = (uint32_t)to_ms_since_boot(get_absolute_time());
   emul_recordRunnerMeminfoSubmit(now_ms);
-  SEND_COMMAND_TO_DISPLAY(RUNNER_CMD_MEMINFO);
+  // TSR mode has no poll loop; the interrupt hook sends the same reply.
+  SEND_COMMAND_TO_DISPLAY(emul_isRunnerTsrMode() ? RUNNER_ADV_CMD_MEMINFO
+                                                 : RUNNER_CMD_MEMINFO);
 
   absolute_time_t deadline =
       delayed_by_us(get_absolute_time(), RUNNER_MEMINFO_TIMEOUT_US);
@@ -2872,7 +2902,7 @@ static void handle_runner_meminfo(http_conn_t *c) {
 static void handle_runner_reset(http_conn_t *c) {
   if (!emul_isRunnerActive()) {
     write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner mode is not active; boot via [U] first");
+                "Runner mode is not active; boot via [U] or [S] first");
     return;
   }
   uint32_t now_ms = (uint32_t)to_ms_since_boot(get_absolute_time());

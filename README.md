@@ -92,12 +92,13 @@ to the Pico W directly — Booster does that for you on demand.
 ## 🕹️ Usage — boot flow
 
 Power-on after install lands on the **Setup menu** for ~20
-seconds. From there you have four top-level commands:
+seconds. From there you have five top-level commands:
 
 | Key | Action |
 | --- | --- |
 | `[U]` | **Runner mode** (recommended). GEMDRIVE comes up, plus the Runner control surface for `runner run` / `load` / `exec` / etc. |
 | `[G]` | GEMDRIVE-only — ST drops straight into the emulated drive but does **not** activate the Runner. Use this if you only want file emulation and don't need the workstation to drive the ST. |
+| `[S]` | **TSR mode** (proof of concept). GEMDRIVE and the Runner's interrupt hook stay resident and the ST boots on through the AUTO folder to the GEM desktop, where the `DEVOPS.ACC` desk accessory serves `runner run` / `load` / `exec`. See [TSR mode](#tsr-mode--runner-commands-from-the-gem-desktop). |
 | `[X]` | Return to the Booster menu (e.g. to install another app). |
 | any key | Halt the auto-launch countdown so the menu stays up indefinitely while you read it. |
 
@@ -124,8 +125,8 @@ overlap` warning described below).
 
 GEMDRIVE emulates a drive from a folder on the microSD card, so without a
 working card there is nothing to emulate. The setup menu says so on the
-GEMDRIVE line — `SD: NO CARD` instead of `SD: mounted` — and `[G]` and `[U]`
-refuse to start, with *"Insert a working microSD card: GEMDRIVE needs one."*
+GEMDRIVE line — `SD: NO CARD` instead of `SD: mounted` — and `[G]`, `[U]` and
+`[S]` refuse to start, with *"Insert a working microSD card: GEMDRIVE needs one."*
 on the status line, rather than launching a mode with no drive behind it.
 
 The auto-launch countdown is refused the same way, so a device powered on
@@ -204,7 +205,7 @@ API Endpoint                               📶
 USB CDC (Debug serial)                     💡
   Status      : connected
 
-[G]EMDRIVE  r[U]nner  [X] Booster
+[G]EMDRIVE r[U]nner T[S]R [X] Booster
 Select an option: ▌
 [████████░░░░░░░░░░] Booting in 12 s — any key halts
 ```
@@ -215,8 +216,8 @@ Select an option: ▌
 | **Adv [V]ector** | Which interrupt vector the Advanced Runner installs its hook into — `vbl ($70)` or `etv_timer ($400)`. See *Picking a hook vector* below for the trade-off. The cog icon appears whenever the section is live. | `[V]` toggle between `vbl` / `etv_timer`. |
 | **API Endpoint** | mDNS hostname and the IP DHCP leased. The Wi-Fi icon appears once the network is up; if there's no IP yet (Wi-Fi still associating) the icon is hidden. | (read-only) |
 | **USB CDC (Debug serial)** | `connected` / `disconnected` — live-refreshed as you plug or unplug a USB cable into the Pico. The lightbulb icon flips in lock-step. | (read-only) |
-| **Bottom navigation strip** | Top-level command keys + a one-character prompt area for typing them. | `[G]` / `[U]` / `[X]`. |
-| **Animated countdown bar** | Shrinking white bar; the message "Booting in N s — any key halts" is overlaid in inverted colour so it stays readable both halves. Becomes "Countdown stopped. Press [G], [U] or [X] to continue." once any key has been pressed. | (passive — but pressing any key halts the countdown) |
+| **Bottom navigation strip** | Top-level command keys + a one-character prompt area for typing them. | `[G]` / `[U]` / `[S]` / `[X]`. |
+| **Animated countdown bar** | Shrinking white bar; the message "Booting in N s — any key halts" is overlaid in inverted colour so it stays readable both halves. Becomes "Countdown stopped. Press [G], [U], [S] or [X] to continue." once any key has been pressed. | (passive — but pressing any key halts the countdown) |
 
 ### Picking a hook vector
 
@@ -693,7 +694,7 @@ loaded   : basepage 0x00078000
 ```
 
 If Runner mode hasn't been entered yet, prints
-`Runner mode is not active. Boot via [U] to enable.` and exits
+`Runner mode is not active. Boot via [U] or [S] to enable.` and exits
 0. `--json` returns the full envelope (`last_command` /
 `last_path` / `last_exit_code` / `last_cd_errno` /
 `last_res_errno` / `loaded_basepage` / `last_load_errno`).
@@ -919,6 +920,69 @@ Synchronous — the workstation file is chunked through
 when `LOCAL` has a header you don't want landing on the ST.
 Same shell-quoting rule as `adv jump`.
 
+### TSR mode — Runner commands from the GEM desktop
+
+> **Proof of concept.** Tested in emulation (Hatari with EmuTOS),
+> not yet on Atari TOS.
+
+`[U]` runs the Runner from the cartridge's boot hook, before the
+AUTO folder, the desk accessories and GEM have loaded, so a program
+it launches finds none of them — no driver from the AUTO folder (an
+Xpad provider, say), and on TOS 1.0x no cookie jar. `[S]` installs
+GEMDRIVE and the Runner's interrupt hook, then lets the ST boot on
+to the desktop as usual. The foreground commands are served from
+there by a desk accessory, `DEVOPS.ACC`.
+
+Press `[S]` at the setup menu. The firmware carries the accessory
+it was built with and writes it to the root of the GEMDRIVE folder
+first, unless an identical copy is already there, so it always
+matches the firmware. Once GEM has started it, `runner status` shows
+it:
+
+```
+active   : true
+mode     : TSR (DEVOPS.ACC loaded)
+```
+
+On the ST, the accessory adds **DevOps Runner** to the Desk menu. It
+opens an alert with the Runner's current directory and the last
+command the accessory ran, with its exit code or result. Commands wait
+while the alert is open.
+
+GEM loads accessories from the root of the boot drive, and GEMDRIVE
+is the boot drive only when it is `C:`. With another drive letter,
+copy `DEVOPS.ACC` to your boot drive yourself; the build writes it to
+`target/atarist/dist/`.
+
+| Command | In TSR mode |
+| --- | --- |
+| `runner run` / `load` / `exec` / `unload` / `cd` | Served by `DEVOPS.ACC`. `409 accessory_not_loaded` until it has started. |
+| `runner meminfo` | Answered by the interrupt hook, as `runner adv meminfo` is. |
+| `runner reset`, `runner adv …` | Unchanged. After a reset the ST boots back into TSR mode. |
+| `runner res` | `409 unsupported_in_tsr` — changing the resolution under GEM would leave the desktop drawn for the old one. |
+
+To launch a program the accessory does what the desktop does for a
+TOS program: it locks the screen, hides the mouse and clears the
+screen. When the program exits it puts back the resolution, screen
+address and palette and has the desktop redraw itself. Its
+`[RUN  ]` / `[EXIT n]` trace lines go to the
+[debug stream](#debug-traces) — `sidecart debug tail` or the USB
+serial port — rather than the screen.
+
+Limits:
+
+- **Plain TOS programs only** — `.TOS`, `.TTP`, games, demos, and
+  `.PRG` files that don't use GEM. On single-tasking TOS a GEM
+  program started from an accessory would run inside the
+  accessory's AES slot.
+- **The accessory only runs while the foreground program waits for
+  GEM events.** While a program it launched is running, only the
+  interrupt-hook commands work: `runner reset` and
+  `runner adv meminfo` / `jump` / `load`.
+- **It shares the desktop's process**, so the desktop can change the
+  current directory between commands. The accessory keeps the
+  Runner's own and sets it again before every command.
+
 ## Debug traces
 
 The firmware exposes a lightweight debug-byte capture surface
@@ -1030,7 +1094,7 @@ usbcdc_dropped : 0
 ```
 
 `firmware_mode` flips to `yes` once the user has committed a
-mode at the menu (`[U]` / `[G]`) — the capture is
+mode at the menu (`[U]`, `[G]` or `[S]`) — the capture is
 gated on this so menu activity never pollutes the stream.
 `ring used / capacity` is the snapshot fill of the in-RAM
 debug ring at the moment of the request. `bytes_dropped` and
@@ -1143,7 +1207,10 @@ into three sections:
 sentinel and hands control to the right blob: `CMD_START = 4`
 jumps into `GEMDRIVE_BLOB+4` (diagnostic + memtop verify), and
 `CMD_START_RUNNER = 5` jumps into `RUNNER_BLOB` (the Runner's
-poll loop). Adding a new module follows the same pattern: place
+poll loop). `CMD_START_TSR = 6` calls `RUNNER_BLOB` with the
+command still in `d6`, so the Runner installs its interrupt hook
+and returns, then goes through `GEMDRIVE_BLOB+4` back to TOS, which
+boots on. Adding a new module follows the same pattern: place
 a new `.text_<name>` section in `devops.ld`, mirror the offset
 with an `equ` in `main.s`, and add the `.o` target to
 `target/atarist/Makefile`.
@@ -1156,6 +1223,11 @@ resolve locally inside their own object files. No `xref` /
 outside-module symbols (except the entry-point `jmp` from
 `main.s`'s dispatch). See `CLAUDE.md` for the full editing
 guardrails.
+
+`devops_acc.s` is not part of the cartridge image: it builds
+`DEVOPS.ACC`, the TSR-mode desk accessory, an ordinary TOS
+executable that GEM loads and relocates. It shares the protocol
+includes and the Runner's command codes.
 
 ### Building from source
 

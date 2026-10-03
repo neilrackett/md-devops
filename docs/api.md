@@ -109,7 +109,8 @@ Clients can switch on `code` reliably. All defined symbols:
 `too_many_open_files`, `disk_error`,
 `insufficient_memory`, `internal_error`, `runner_inactive`, `gateway_timeout`, `no_snapshot`,
 `wrong_hook`, `ram_overflow`, `pexec_failed`, `mfree_failed`,
-`program_already_loaded`, `no_program_loaded`.
+`program_already_loaded`, `no_program_loaded`, `accessory_not_loaded`,
+`unsupported_in_tsr`.
 
 `too_many_open_files` — FatFs's lock table is full. It is shared with GEMDRIVE
 (`FF_FS_LOCK`, 28 entries: 8 GEMDRIVE files, 16 GEMDRIVE searches and 2 HTTP
@@ -122,10 +123,18 @@ needs the card answers this the same way: `volume`, listings, downloads,
 uploads, folder operations, `runner load` and `runner run`. It is not a fault
 to recover from by hand: the firmware retries the mount every two seconds, so
 inserting a working card clears it within a few seconds with no reset, and the
-setup menu shows `SD: NO CARD` meanwhile and refuses `[G]` and `[U]`.
+setup menu shows `SD: NO CARD` meanwhile and refuses `[G]`, `[U]` and `[S]`.
 
 Runner-specific codes (see *Runner mode* below):
-- `runner_inactive` — the user didn't pick `[U]` at boot.
+- `runner_inactive` — the user didn't pick `[U]` or `[S]` at boot.
+- `accessory_not_loaded` — TSR mode (`[S]`): `DEVOPS.ACC` has not
+  reported in yet, so nothing on the ST serves `run`, `cd`, `load`,
+  `exec` or `unload`. It reports in when GEM starts it at the end of
+  the boot. `[S]` writes it to the root of the GEMDRIVE folder, which
+  is the boot drive when GEMDRIVE is `C:`; with another drive letter
+  it has to be copied to the boot drive by hand.
+- `unsupported_in_tsr` — `runner res` in TSR mode: changing the
+  resolution under GEM would leave the desktop drawn for the old one.
 - `busy` — another foreground Runner command is in flight. Every
   m68k-bound foreground verb gates on this lock: `run`, `cd`,
   `res`, `meminfo`, `load`, `exec`, and `unload`. `reset` and the
@@ -536,14 +545,15 @@ fall into three behavioural buckets:
   `exec` / `unload`. `run` / `cd` / `res` / `exec` are
   fire-and-forget (`202 Accepted`); `meminfo` / `load` / `unload`
   are synchronous. Every one of these gates on `409
-  runner_inactive` when `[U]` wasn't picked, and on `503 busy`
+  runner_inactive` when `[U]` or `[S]` wasn't picked, and on `503 busy`
   (with `Retry-After: 1`) when another foreground command is
-  already in flight.
+  already in flight. In TSR mode `DEVOPS.ACC` serves them instead of
+  the poll loop; see *TSR mode* below.
 
 - **VBL-ISR-driven commands** — `reset` plus the entire
   `/api/v1/runner/adv/*` surface. These ride the m68k's VBL
   ISR (`$70`, or `$400` if `ADV_HOOK_VECTOR = etv_timer` in the
-  setup menu). They return `409 runner_inactive` when `[U]`
+  setup menu). They return `409 runner_inactive` when `[U]` or `[S]`
   wasn't picked, but **do not** gate on the busy lock —
   escaping wedged state is their job. `adv jump` and `adv load`
   additionally require the VBL hook specifically (`409
@@ -557,6 +567,29 @@ menu's `ADV_HOOK_VECTOR` choice). VBL-driven commands keep working
 when the foreground poll loop is blocked — wedged programs, bombs
 already painted, traps disabled. See the *Advanced Runner* section
 below the foreground endpoints.
+
+### TSR mode
+
+`[S]` in the setup menu installs GEMDRIVE and the Advanced Runner hook,
+then lets the ST boot on through the AUTO folder to the GEM desktop
+instead of entering the poll loop. The foreground commands are served
+by the desk accessory `DEVOPS.ACC`, which GEM starts from the root of
+the boot drive. `[S]` first writes the copy built into the firmware to
+the root of the GEMDRIVE folder, unless an identical one is there. The API is the same, with these differences:
+
+- `run`, `cd`, `load`, `exec` and `unload` answer `409
+  accessory_not_loaded` until the accessory has reported in.
+- `meminfo` is answered by the Advanced Runner hook, as `adv/meminfo`
+  is.
+- `res` answers `409 unsupported_in_tsr`.
+- `GET /api/v1/runner` reports `"tsr": true`, and `"accessory"` once
+  the accessory has reported in.
+- After `reset` the ST boots back into TSR mode.
+
+The accessory can only launch plain TOS programs (`.TOS`, `.TTP`, and
+`.PRG` files that don't use GEM). It sends its `[RUN  ]` / `[EXIT n]`
+trace lines to the [debug stream](#debug-traces) rather than the
+screen.
 
 > **Shell-quoting note** — several Advanced commands accept a
 > `$hex` legacy form (e.g. `$78000`, equivalent to `0x78000`). Bash
@@ -583,6 +616,8 @@ curl http://sidecart.local/api/v1/runner
 {
   "ok": true,
   "active": true,
+  "tsr": false,
+  "accessory": false,
   "busy": false,
   "cwd": "/GAMES/ARKANOID",
   "last_command": "EXECUTE",
@@ -596,6 +631,10 @@ curl http://sidecart.local/api/v1/runner
   "last_finished_at_ms": 13002
 }
 ```
+
+`tsr` is `true` when the user picked `[S]`; `accessory` is `true` once
+`DEVOPS.ACC` has reported in since the ST last booted (always `false`
+outside TSR mode).
 
 `last_command` is one of `null`, `RESET`, `EXECUTE`, `CD`, `RES`,
 `MEMINFO`, `JUMP`, `LOAD`, `PEXEC_LOAD`, `PEXEC_EXEC`, or
@@ -690,7 +729,7 @@ do pass `--`, it lands in `cmdline` literally.)
 
 Common error codes: `404 not_found` (program file doesn't exist),
 `400 bad_path` (rejected name), `400 bad_request` (cmdline too
-long), `409 runner_inactive`, `503 busy`.
+long), `409 runner_inactive`, `409 accessory_not_loaded`, `503 busy`.
 
 ---
 
@@ -749,8 +788,9 @@ Response 200:
 Common error codes: `200 OK` (success — basepage in body), `422
 pexec_failed` (GEMDOS errno in `gemdos_errno` field — file too
 big, out of memory, etc.), `404 not_found`, `409
-runner_inactive`, `409 program_already_loaded`, `503 busy`,
-`504 gateway_timeout` (m68k didn't respond within 10 s).
+runner_inactive`, `409 accessory_not_loaded`, `409
+program_already_loaded`, `503 busy`, `504 gateway_timeout` (m68k
+didn't respond within 10 s).
 
 #### `POST /api/v1/runner/exec` — `Pexec(4)` just-go
 
@@ -776,7 +816,8 @@ Response 202:
 ```
 
 Common error codes: `202 Accepted`, `409 no_program_loaded` (no
-prior `load`), `409 runner_inactive`, `503 busy`.
+prior `load`), `409 runner_inactive`, `409 accessory_not_loaded`,
+`503 busy`.
 
 #### `POST /api/v1/runner/unload` — release the basepage
 
@@ -802,7 +843,7 @@ Response 200:
 Common error codes: `200 OK`, `422 mfree_failed` (GEMDOS errno
 in `gemdos_errno` — rare, typically means the basepage was
 already freed), `409 no_program_loaded`, `409 runner_inactive`,
-`503 busy`, `504 gateway_timeout`.
+`409 accessory_not_loaded`, `503 busy`, `504 gateway_timeout`.
 
 #### Full lifecycle example
 
@@ -841,7 +882,8 @@ python3 cli/sidecart.py runner cd ARKANOID         # relative to current cwd
 ```
 
 Common error codes: `404 not_found`, `400 bad_path` (rejected name
-or "not a directory"), `409 runner_inactive`, `503 busy`.
+or "not a directory"), `409 runner_inactive`, `409
+accessory_not_loaded`, `503 busy`.
 
 ---
 
@@ -869,7 +911,7 @@ python3 cli/sidecart.py runner res med
 ```
 
 Common error codes: `400 bad_request` (unknown rez), `409
-runner_inactive`, `503 busy`.
+runner_inactive`, `409 unsupported_in_tsr`, `503 busy`.
 
 ---
 
@@ -879,6 +921,8 @@ Synchronous read of the ST's TOS memory cookies and the MMU
 bank-config register. The handler fires `RUNNER_CMD_MEMINFO` and
 spins on the chandler loop until the m68k replies, with a 1-second
 timeout (returned as `504 gateway_timeout` if the m68k is wedged).
+In TSR mode the Advanced Runner hook answers instead, with the same
+reply.
 
 Reported addresses:
 
@@ -1112,7 +1156,7 @@ One cartridge cycle per byte. The 8-bit read result is undefined
 and MUST be discarded.
 
 The capture is gated on the firmware-mode flag — it goes live
-the moment the user picks `[U]` / `[G]` in the setup
+the moment the user picks `[U]`, `[G]` or `[S]` in the setup
 menu and the device commits to firmware mode. Pre-commit reads
 in the debug window are dropped at the RP filter so menu-mode
 activity never pollutes the diagnostic stream.
@@ -1142,7 +1186,7 @@ bytes; safe to poll at any cadence.
 
 | Field | Meaning |
 | --- | --- |
-| `firmware_mode` | `true` once `[U]` / `[G]` has committed; until then, debug emits are dropped at the RP filter. |
+| `firmware_mode` | `true` once `[U]`, `[G]` or `[S]` has committed; until then, debug emits are dropped at the RP filter. |
 | `ring_used` | Bytes currently in the producer's ring (capped at `ring_capacity`). |
 | `ring_capacity` | Ring size (8192 today). |
 | `bytes_dropped` | Producer-side drops. Always 0 in the current design (the producer overwrites; per-consumer drops are reported separately). |

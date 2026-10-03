@@ -67,6 +67,7 @@ static void cmdGemdriveRelocAddr(const char *arg);
 static void cmdGemdriveMemtop(const char *arg);
 static void cmdAdvHookVector(const char *arg);
 static void cmdRunner(const char *arg);
+static void cmdTsr(const char *arg);
 static void clearLaunchBlock(void);
 
 // Command table. Every key here corresponds to a label on the on-screen
@@ -82,6 +83,7 @@ static const Command commands[] = {
     {"t", cmdGemdriveMemtop},
     {"v", cmdAdvHookVector},
     {"u", cmdRunner},
+    {"s", cmdTsr},
 };
 
 // Number of commands in the table
@@ -129,6 +131,10 @@ static int g_menuLastUsbCdcAttached = -1;
 // what makes edit-build-run iteration bearable. The scheduled
 // relaunch is driven from the main loop via runnerRelaunchAtMs.
 static bool runnerActive = false;
+// TSR mode ([S]): Runner active, foreground commands served by
+// DEVOPS.ACC once GEM has started it.
+static bool runnerTsrMode = false;
+static bool runnerAccessoryAttached = false;
 static bool runnerBusy = false;
 static runner_last_command_t runnerLastCommand = RUNNER_LAST_NONE;
 static char runnerLastPath[RUNNER_PATH_LEN] = {0};
@@ -175,6 +181,13 @@ static uint8_t runnerAdvHookVector = RUNNER_HOOK_VECTOR_UNKNOWN;
 static bool runnerAdvLoadAcked = false;
 
 bool emul_isRunnerActive(void) { return runnerActive; }
+bool emul_isRunnerTsrMode(void) { return runnerTsrMode; }
+bool emul_isRunnerAccessoryAttached(void) { return runnerAccessoryAttached; }
+void emul_recordRunnerAccessoryAttached(void) {
+  // GEM starts the accessory in [G] mode too, where nothing resets this
+  // on the next boot; it only means something in TSR mode.
+  if (runnerTsrMode) runnerAccessoryAttached = true;
+}
 bool emul_isRunnerBusy(void) { return runnerBusy; }
 
 runner_last_command_t emul_getRunnerLastCommand(void) {
@@ -458,6 +471,9 @@ void emul_resetRunnerSession(void) {
   runnerMeminfoHasSnapshot = false;
   runnerAdvancedInstalled = false;
   runnerAdvHookVector = RUNNER_HOOK_VECTOR_UNKNOWN;
+  // The cartridge's HELLO comes first on every boot; the accessory
+  // reports in again once GEM starts it.
+  runnerAccessoryAttached = false;
 }
 
 bool emul_isRunnerAdvancedInstalled(void) {
@@ -655,7 +671,7 @@ static void drawHaltedInfoLine(void) {
           ? "Insert a working microSD card: GEMDRIVE needs one."
       : launchNeedsStReset
           ? "Reset the Atari ST first: no HELLO since RP boot."
-          : "Countdown stopped. Press [G], [U] or [X] to continue.");
+          : "Countdown stopped. Press [G], [U], [S] or [X] to continue.");
 }
 
 // Save the app settings and report a failure on the menu. The countdown stops
@@ -1495,7 +1511,7 @@ static void menu(void) {
   term_printString(usbAttached ? "connected   " : "disconnected");
 
   vt52Cursor(TERM_SCREEN_SIZE_Y - 2, 0);
-  term_printString("[G]EMDRIVE  r[U]nner  [X] Booster");
+  term_printString("[G]EMDRIVE r[U]nner T[S]R [X] Booster");
 
   vt52Cursor(TERM_SCREEN_SIZE_Y - 1, 0);
   term_printString("Select an option: ");
@@ -1592,6 +1608,28 @@ void cmdRunner(const char *arg) {
   // capture filter for the rest of the session).
   emul_enterFirmwareMode();
   SEND_COMMAND_TO_DISPLAY(DISPLAY_COMMAND_START_RUNNER);
+}
+
+// [S] launches TSR mode: GEMDRIVE and the Runner's interrupt hook stay
+// resident and the ST boots on through the AUTO folder to the desktop,
+// where DEVOPS.ACC serves the foreground Runner commands.
+void cmdTsr(const char *arg) {
+  (void)arg;
+  if (!emul_canLaunch()) return;
+  haltCountdown = true;
+  menuScreenActive = false;
+  showTitle();
+  term_printString("\n\n");
+  term_printString("Launching DevOps TSR mode on the Atari ST...\n");
+  // Before the ST boots GEM, which loads accessories once, at startup.
+  if (!runner_installAccessory()) {
+    term_printString("Could not write " RUNNER_ACC_NAME
+                     " to the GEMDRIVE folder.\n");
+  }
+  runnerActive = true;
+  runnerTsrMode = true;
+  emul_enterFirmwareMode();
+  SEND_COMMAND_TO_DISPLAY(DISPLAY_COMMAND_START_TSR);
 }
 
 void cmdBooster(const char *arg) {
@@ -2265,8 +2303,11 @@ void emul_start() {
     if (runnerRelaunchAtMs != 0 && runnerActive) {
       uint32_t now_ms = (uint32_t)to_ms_since_boot(get_absolute_time());
       if ((int32_t)(now_ms - runnerRelaunchAtMs) >= 0) {
-        DPRINTF("emul: relaunch tick — firing DISPLAY_COMMAND_START_RUNNER\n");
-        SEND_COMMAND_TO_DISPLAY(DISPLAY_COMMAND_START_RUNNER);
+        DPRINTF("emul: relaunch tick — firing %s\n",
+                runnerTsrMode ? "DISPLAY_COMMAND_START_TSR"
+                              : "DISPLAY_COMMAND_START_RUNNER");
+        SEND_COMMAND_TO_DISPLAY(runnerTsrMode ? DISPLAY_COMMAND_START_TSR
+                                              : DISPLAY_COMMAND_START_RUNNER);
         runnerRelaunchAtMs = now_ms + 500;  // try again in 500 ms
       }
     }
