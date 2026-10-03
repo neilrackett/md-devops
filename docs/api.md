@@ -143,7 +143,8 @@ Runner-specific codes (see *Runner mode* below):
 - `gateway_timeout` — the Atari ST didn't reply within the
   endpoint's spin-wait deadline (10 s for `runner load`, 5 s for
   `runner unload`, 1 s for `runner meminfo` / `runner adv/meminfo`
-  / per-chunk `runner adv/load`).
+  / per-chunk `runner adv/load`). A timed-out `load` or `unload` is
+  withdrawn, so the ST does not run it later.
 - `no_snapshot` — the m68k handshake completed but no snapshot was
   recorded (should not happen in practice).
 - `wrong_hook` — Advanced Runner command requires the VBL hook (`$70`)

@@ -1576,6 +1576,17 @@ static bool runner_require_accessory(http_conn_t *c) {
   return false;
 }
 
+// A synchronous command that timed out is still in the sentinel, and the
+// ST would run it whenever it next looks: in TSR mode, as soon as the
+// accessory gets a turn again. Withdraw it, unless an Advanced Runner
+// command has replaced it since. If the ST picked it up just before, its
+// late reply still updates the state.
+static void runner_withdraw_command(uint32_t command) {
+  if (READ_AND_SWAP_LONGWORD(display_getCommandAddress(), 0) == command) {
+    SEND_COMMAND_TO_DISPLAY(0);
+  }
+}
+
 // POST /api/v1/runner/run —
 //
 // JSON body: {"path": "<rel>", "cmdline": "<≤127>"}.
@@ -1855,6 +1866,7 @@ static void handle_runner_load(http_conn_t *c) {
       // errno so the RP-side state stays consistent (busy=false,
       // pendingBasepage=0, load errno populated).
       emul_recordRunnerLoadDone(0, fail_ms);
+      runner_withdraw_command(RUNNER_CMD_LOAD);
       write_error(c, 504, "Gateway Timeout", "gateway_timeout",
                   "Runner did not respond within 10 s");
       return;
@@ -1985,6 +1997,7 @@ static void handle_runner_unload(http_conn_t *c) {
       // Synthetic timeout failure — keeps state consistent
       // (busy=false, load errno populated, basepage preserved).
       emul_recordRunnerUnloadDone(-1, fail_ms);
+      runner_withdraw_command(RUNNER_CMD_UNLOAD);
       write_error(c, 504, "Gateway Timeout", "gateway_timeout",
                   "Runner did not respond within 5 s");
       return;
