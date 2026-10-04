@@ -978,9 +978,14 @@ static void __not_in_flash_func(handleWriteBuffCall)(uint16_t *payload) {
 static void __not_in_flash_func(handleDgetpathCall)(void) {
   size_t len = strlen(dpathStr);
   if (len >= GEMDRIVE_DEFAULT_PATH_LEN) len = GEMDRIVE_DEFAULT_PATH_LEN - 1;
-  writeAppFreeBytes(GEMDRIVE_DEFAULT_PATH_OFFSET, dpathStr, len);
-  *(volatile uint8_t *)(appFreeAddress() + GEMDRIVE_DEFAULT_PATH_OFFSET + len) =
-      0;
+  // The m68k copies the path out of a window it reads as big-endian words,
+  // so the bytes go in swapped, the NUL and a pad byte to an even length
+  // included. Written as it was, "\STDL" reached the ST as "S\DT".
+  char path[GEMDRIVE_DEFAULT_PATH_LEN];
+  memset(path, 0, sizeof(path));
+  memcpy(path, dpathStr, len);
+  writeAppFreeBytesSwapped(GEMDRIVE_DEFAULT_PATH_OFFSET, path,
+                           (len + 2) & ~(size_t)1);
 }
 
 // Read a path string out of the protocol payload. m68k stored each
