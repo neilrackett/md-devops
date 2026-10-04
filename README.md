@@ -951,8 +951,10 @@ while the alert is open.
 
 GEM loads accessories from the root of the boot drive, and GEMDRIVE
 is the boot drive only when it is `C:`. With another drive letter,
-copy `DEVOPS.ACC` to your boot drive yourself; the build writes it to
-`target/atarist/dist/`.
+`[S]` still writes `DEVOPS.ACC` to the root of the GEMDRIVE folder:
+copy it from there to the root of your boot drive. Until you do,
+`[S]` gives you `[G]` plus `runner reset`, `runner meminfo` and the
+`runner adv` commands.
 
 | Command | In TSR mode |
 | --- | --- |
