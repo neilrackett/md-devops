@@ -818,9 +818,9 @@ def cmd_runner_adv_meminfo(args: argparse.Namespace) -> int:
     print(f"screenmem [$44E]  : 0x{parsed.get('screenmem', 0):08X}")
     bp = parsed.get('basepage', 0)
     if bp:
-        print(f"basepage  [$4F2]  : 0x{bp:08X}")
+        print(f"basepage  [_run]  : 0x{bp:08X}")
     else:
-        print(f"basepage  [$4F2]  : 0 (TOS < 1.04 or unset)")
+        print(f"basepage  [_run]  : 0 (unset)")
     b0 = parsed.get('bank0_kb', 0)
     b1 = parsed.get('bank1_kb', 0)
     if parsed.get('decoded'):
@@ -988,9 +988,9 @@ def cmd_runner_meminfo(args: argparse.Namespace) -> int:
     print(f"screenmem [$44E]  : 0x{parsed.get('screenmem', 0):08X}")
     bp = parsed.get('basepage', 0)
     if bp:
-        print(f"basepage  [$4F2]  : 0x{bp:08X}")
+        print(f"basepage  [_run]  : 0x{bp:08X}")
     else:
-        print(f"basepage  [$4F2]  : 0 (TOS < 1.04 or unset)")
+        print(f"basepage  [_run]  : 0 (unset)")
     b0 = parsed.get('bank0_kb', 0)
     b1 = parsed.get('bank1_kb', 0)
     if parsed.get('decoded'):

@@ -804,7 +804,7 @@ runner_res:
 ;     4     u32   _memtop   ($436)
 ;     8     u32   _phystop  ($42E)
 ;    12     u32   screenmem ($44E)
-;    16     u32   basepage  ($4F2 — TOS >= 1.04; 0 on older TOS)
+;    16     u32   basepage  (_run, see runner_current_basepage)
 ;    20     u16   bank0_kb  (decoded from $FFFF8001 lower nibble)
 ;    22     u16   bank1_kb
 ;
@@ -847,13 +847,14 @@ runner_meminfo:
 	clr.l	20(a4)
 
 	; Stage 4: full struct. _membot ($432), _memtop ($436),
-	; _phystop ($42E), screenmem ($44E), basepage ($4F2), and the
+	; _phystop ($42E), screenmem ($44E), basepage (_run), and the
 	; MMU bank-config byte at $FFFF8001.
 	move.l	$432.w, 0(a4)			; _membot
 	move.l	$436.w, 4(a4)			; _memtop
 	move.l	$42E.w, 8(a4)			; _phystop
 	move.l	$44E.w, 12(a4)			; screenmem (logical screen base)
-	move.l	$4F2.w, 16(a4)			; _run (basepage; 0 on TOS < 1.04)
+	bsr	runner_current_basepage
+	move.l	d0, 16(a4)			; _run (basepage)
 
 	; Read the MMU configuration register at $FFFF8001. The byte's
 	; lower nibble encodes the (bank0, bank1) sizes. We're already
@@ -969,7 +970,7 @@ adv_force_reset:
 ; VBL ISR so it works even when the foreground poll loop is wedged.
 ;
 ; We're already in supervisor mode (autovector $70 entry preserves
-; the SR with S=1) so $432/$436/$42E/$44E/$4F2/$FFFF8001 are all
+; the SR with S=1) so $432/$436/$42E/$44E/_run/$FFFF8001 are all
 ; readable directly — no Super() toggle needed. No Cconws trace
 ; either: GEMDOS calls from inside an ISR are a hazard.
 ;
@@ -992,7 +993,8 @@ adv_meminfo_isr:
 	move.l	$436.w, 4(a4)			; _memtop
 	move.l	$42E.w, 8(a4)			; _phystop
 	move.l	$44E.w, 12(a4)			; _v_bas_ad
-	move.l	$4F2.w, 16(a4)			; _run (basepage; 0 on TOS < 1.04)
+	bsr	runner_current_basepage
+	move.l	d0, 16(a4)			; _run (basepage)
 	clr.l	20(a4)				; pre-zero bank0/bank1 slots
 
 	; --- Read MMU config byte at $FFFF8001 and decode bank sizes. ---
@@ -1149,6 +1151,32 @@ old_adv_hook:
 adv_active_vec:
 	dc.l	0
 	even
+
+; ---------------------------------------------------------------
+; runner_current_basepage — d0.l = the running process's basepage,
+; read from TOS' _run. $4F2 is _sysbase, a pointer to the OS header,
+; not _run itself. From TOS 1.02 the header's p_run field (offset $28)
+; holds _run's address; TOS 1.00 has no such field and keeps _run at
+; $602C, or at $873C in the Spanish version (country code 4 in bits
+; 1..15 of os_conf). Trashes a0.
+; ---------------------------------------------------------------
+runner_current_basepage:
+	move.l	$4F2.w, a0			; _sysbase: the OS header
+	cmp.w	#$0102, 2(a0)			; os_version
+	bcc.s	.cb_p_run
+	move.w	$1C(a0), d0			; os_conf
+	lsr.w	#1, d0
+	cmp.w	#4, d0				; Spain
+	beq.s	.cb_spanish
+	move.l	$602C.w, d0
+	rts
+.cb_spanish:
+	move.l	$873C, d0
+	rts
+.cb_p_run:
+	move.l	$28(a0), a0			; p_run: &_run
+	move.l	(a0), d0
+	rts
 
 ; ---------------------------------------------------------------
 ; runner_print_dec_d3 — print signed 32-bit value in d3 as ASCII

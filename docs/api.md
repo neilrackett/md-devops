@@ -933,7 +933,7 @@ Reported addresses:
 | `memtop`    | `$436`       | `_memtop` — top of TPA memory available to processes. |
 | `phystop`   | `$42E`       | `_phystop` — top of physical RAM. |
 | `screenmem` | `$44E`       | `_v_bas_ad` — logical screen base. |
-| `basepage`  | `$4F2`       | `_run` — current process basepage (TOS ≥ 1.04; 0 on older TOS). |
+| `basepage`  | `_run`       | Basepage of the running process. Found through the OS header that `_sysbase` (`$4F2`) points to: its `p_run` field on TOS 1.02 and later, `$602C` (`$873C` in the Spanish version) on TOS 1.00. |
 | `bank0_kb`, `bank1_kb` | `$FFFF8001` lower nibble | MMU bank sizes in KB. `0/0` when the nibble is unrecognised. |
 | `decoded`   | derived | `true` when at least one bank size is non-zero. |
 

@@ -147,7 +147,7 @@ typedef struct {
   uint32_t memtop;     // _memtop   ($436)
   uint32_t phystop;    // _phystop  ($42E)
   uint32_t screenmem;  // _v_bas_ad ($44E) logical screen base
-  uint32_t basepage;   // _run      ($4F2) — 0 on TOS < 1.04
+  uint32_t basepage;   // _run      — running process (via the OS header)
   uint16_t bank0_kb;   // 0 = unknown / unrecognised MMU config
   uint16_t bank1_kb;
 } runner_meminfo_t;

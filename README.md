@@ -757,7 +757,7 @@ membottom [$432]  : 0x00006A04
 memtop    [$436]  : 0x00080000
 phystop   [$42E]  : 0x00080000
 screenmem [$44E]  : 0x00078000
-basepage  [$4F2]  : 0x00078000
+basepage  [_run]  : 0x00078000
 bank 0    [$FF8001 nibble] : 512 KB
 bank 1    [$FF8001 nibble] : 0 KB
 total RAM         : 512 KB
@@ -866,7 +866,7 @@ membottom [$432]  : 0x00006A04
 memtop    [$436]  : 0x00080000
 phystop   [$42E]  : 0x00080000
 screenmem [$44E]  : 0x00078000
-basepage  [$4F2]  : 0x00078000
+basepage  [_run]  : 0x00078000
 bank 0    [$FF8001 nibble] : 512 KB
 bank 1    [$FF8001 nibble] : 0 KB
 total RAM         : 512 KB
