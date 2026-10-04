@@ -27,6 +27,7 @@
 #include "lwip/tcp.h"
 #include "pico/cyw43_arch.h"
 #include "pico/time.h"
+#include "rom4.h"
 #include "runner.h"
 #include "sdcard.h"
 #include "select.h"
@@ -371,6 +372,20 @@ static void http_spinTick(void) {
   usbcdc_drain();
 }
 
+// Where a buffered request body goes, and how much of one fits. A rom4 PUT
+// can fill the whole area, more than c->body holds, so it is gathered in
+// c->resp, which nothing uses until the response is written.
+_Static_assert(ROM4_SIZE <= HTTP_RESPONSE_BUF_BYTES,
+               "c->resp must hold a whole rom4 PUT body");
+static char *body_buffer(http_conn_t *c, size_t *cap) {
+  if (c->method == HM_PUT && strcmp(c->path, "/api/v1/rom4") == 0) {
+    *cap = ROM4_SIZE;
+    return c->resp;
+  }
+  *cap = sizeof(c->body);
+  return c->body;
+}
+
 // Traffic in either direction keeps a connection alive for the sweeper.
 static void conn_touch(http_conn_t *c) {
   c->last_activity_ms = (uint32_t)to_ms_since_boot(get_absolute_time());
@@ -529,8 +544,10 @@ static err_t __not_in_flash_func(srv_recv_cb)(void *arg, struct tcp_pcb *pcb, st
   } else if (c->state == HC_READ_BODY) {
     size_t need = c->content_length - c->body_received;
     size_t take = (p->tot_len < need) ? p->tot_len : need;
+    size_t cap;
     if (take > 0) {
-      pbuf_copy_partial(p, c->body + c->body_received, (u16_t)take, 0);
+      pbuf_copy_partial(p, body_buffer(c, &cap) + c->body_received, (u16_t)take,
+                        0);
       c->body_received += take;
     }
     pbuf_free(p);
@@ -881,7 +898,9 @@ static void parse_and_dispatch(http_conn_t *c, struct pbuf *seg,
   // first segment).
   bool body_bearing = (c->method == HM_POST) || (c->method == HM_PUT);
   if (body_bearing && c->content_length > 0) {
-    if (c->content_length > HTTP_REQUEST_BODY_BUF_BYTES) {
+    size_t cap;
+    char *body = body_buffer(c, &cap);
+    if (c->content_length > cap) {
       write_error(c, 413, "Payload Too Large", "payload_too_large",
                   "Body too large for this route");
       return;
@@ -889,7 +908,7 @@ static void parse_and_dispatch(http_conn_t *c, struct pbuf *seg,
     size_t leftover = body_leftover;
     if (leftover > c->content_length) leftover = c->content_length;
     if (leftover > 0) {
-      pbuf_copy_partial(seg, c->body, (u16_t)leftover, (u16_t)body_off);
+      pbuf_copy_partial(seg, body, (u16_t)leftover, (u16_t)body_off);
       c->body_received = leftover;
     }
     if (c->body_received >= c->content_length) {
@@ -2323,6 +2342,10 @@ static void handle_runner_adv_jump(http_conn_t *c) {
 //   - Target range must lie above 0x800 (system area) and below
 //     the snapshot's phystop (writable RAM only).
 #define ADV_LOAD_CHUNK_SIZE   8192u
+#define ADV_LOAD_BUF_OFFSET   0x4000u  // in APP_FREE
+_Static_assert(CHANDLER_APP_FREE_OFFSET + ADV_LOAD_BUF_OFFSET +
+                       ADV_LOAD_CHUNK_SIZE <= ROM4_OFFSET,
+               "the adv load staging buffer runs into the rom4 area");
 #define ADV_LOAD_TIMEOUT_US   1000000
 
 static uint8_t *adv_load_buf_base(void) {
@@ -2330,7 +2353,7 @@ static uint8_t *adv_load_buf_base(void) {
   // 0x4000; APP_FREE is 46 KB so 0x4000..0x6000 (8 KB) is comfortably
   // inside the arena and clear of the GEMDRIVE / Runner-meta block
   // (which ends below 0x1A00).
-  return (uint8_t *)(runner_app_free_address() + 0x4000u);
+  return (uint8_t *)(runner_app_free_address() + ADV_LOAD_BUF_OFFSET);
 }
 
 // Byte-pair-swapped append: drop `n` bytes from `p` (starting at
@@ -2761,6 +2784,142 @@ static void handle_debug_log(http_conn_t *c) {
   // to check), they go out without waiting for sent_cb. Otherwise
   // it's a no-op and the next sent_cb / poll_cb picks up.
   stream_debug_drive(c);
+}
+
+// --- rom4 area ---
+//
+// 1 KB of the cartridge window that the workstation writes and any ST
+// program reads (rom4.h). No mode, Runner or busy gate: the area is
+// there from RP boot in every mode.
+
+// One frame's header: [u16 offset][u16 length], big-endian.
+static void rom4_frame_header(const uint8_t *p, uint32_t *offset,
+                              uint32_t *len) {
+  *offset = ((uint32_t)p[0] << 8) | p[1];
+  *len = ((uint32_t)p[2] << 8) | p[3];
+}
+
+// PUT /api/v1/rom4?offset=N  — the body is one write at offset N.
+// PUT /api/v1/rom4           — the body is frames
+//                               [u16 offset][u16 length][length bytes],
+//                               applied in order.
+// Offsets are relative to the area. The body, gathered in c->resp (see
+// body_buffer), is checked whole before any of it is written, so a bad
+// request changes nothing.
+static void handle_rom4_put(http_conn_t *c) {
+  const uint8_t *body = (const uint8_t *)c->resp;
+  size_t len = c->content_length;
+  uint32_t writes = 0;
+  char offset_str[24];
+  if (!c->has_content_length) {
+    write_error(c, 411, "Length Required", "length_required",
+                "Content-Length required");
+    return;
+  }
+  if (query_get(c->query, "offset", offset_str, sizeof(offset_str))) {
+    char *endp = NULL;
+    unsigned long offset = strtoul(offset_str, &endp, 0);
+    if (offset_str[0] == '\0' || *endp != '\0') {
+      write_error(c, 400, "Bad Request", "bad_request",
+                  "Could not parse `offset` as integer");
+      return;
+    }
+    if (!rom4_write((uint32_t)offset, body, (uint32_t)len)) {
+      write_error(c, 400, "Bad Request", "out_of_range",
+                  "offset + body length is past the end of the area");
+      return;
+    }
+    writes = 1;
+  } else {
+    uint32_t offset = 0, n = 0;
+    for (size_t pos = 0; pos < len; pos += 4 + n, writes++) {
+      if (len - pos < 4) {
+        write_error(c, 400, "Bad Request", "bad_request",
+                    "Truncated frame header");
+        return;
+      }
+      rom4_frame_header(body + pos, &offset, &n);
+      if (n > len - pos - 4) {
+        write_error(c, 400, "Bad Request", "bad_request",
+                    "Frame length runs past the end of the body");
+        return;
+      }
+      if (offset > ROM4_SIZE || n > ROM4_SIZE - offset) {
+        write_error(c, 400, "Bad Request", "out_of_range",
+                    "Frame runs past the end of the area");
+        return;
+      }
+    }
+    for (size_t pos = 0; pos < len; pos += 4 + n) {
+      rom4_frame_header(body + pos, &offset, &n);
+      rom4_write(offset, body + pos + 4, n);
+    }
+  }
+  char resp[64];
+  int n = snprintf(resp, sizeof(resp), "{\"ok\":true,\"writes\":%lu}\n",
+                   (unsigned long)writes);
+  if (n < 0) n = 0;
+  write_response(c, 200, "OK", "application/json", resp, (size_t)n);
+}
+
+// GET /api/v1/rom4 —
+//   {"ok":true,"address":<ST address>,"size":<bytes>,"magic":<slot 20>}
+// PUT /api/v1/rom4 — handle_rom4_put.
+static void handle_rom4(http_conn_t *c) {
+  if (c->method == HM_PUT) {
+    handle_rom4_put(c);
+    return;
+  }
+  char body[96];
+  int n = snprintf(body, sizeof(body),
+                   "{\"ok\":true,\"address\":%lu,\"size\":%u,"
+                   "\"magic\":%lu}\n",
+                   (unsigned long)rom4_getAddress(), (unsigned)ROM4_SIZE,
+                   (unsigned long)ROM4_MAGIC);
+  if (n < 0) n = 0;
+  write_response(c, 200, "OK", "application/json", body, (size_t)n);
+}
+
+// GET /api/v1/rom4/data — the whole area, ROM4_SIZE bytes in ST order.
+//
+// Headers and body together are more than c->resp holds, so they go to
+// lwIP as two copied writes. An idle connection's send buffer takes both;
+// a fuller one gets a 503 rather than a body cut short.
+static void handle_rom4_data(http_conn_t *c) {
+  if (c->is_head) {
+    write_response(c, 200, "OK", "application/octet-stream", NULL, ROM4_SIZE);
+    return;
+  }
+  int n = snprintf(c->resp, sizeof(c->resp),
+                   "HTTP/1.1 200 OK\r\n"
+                   "Server: md-devops/%s\r\n"
+                   "Connection: close\r\n"
+                   "Content-Type: application/octet-stream\r\n"
+                   "Content-Length: %u\r\n"
+                   "\r\n",
+                   RELEASE_VERSION, (unsigned)ROM4_SIZE);
+  if (n < 0 || (size_t)n >= sizeof(c->resp)) {
+    conn_close(c);
+    return;
+  }
+  if (tcp_sndbuf(c->pcb) < (size_t)n + ROM4_SIZE ||
+      tcp_write(c->pcb, c->resp, (u16_t)n,
+                TCP_WRITE_FLAG_COPY | TCP_WRITE_FLAG_MORE) != ERR_OK) {
+    write_error(c, 503, "Service Unavailable", "busy", "Send buffer full");
+    return;
+  }
+  rom4_read((uint8_t *)c->resp);
+  if (tcp_write(c->pcb, c->resp, (u16_t)ROM4_SIZE, TCP_WRITE_FLAG_COPY) !=
+      ERR_OK) {
+    conn_close(c);  // the headers are already queued
+    return;
+  }
+  tcp_output(c->pcb);
+  // Close once the peer has acknowledged both writes (srv_sent_cb).
+  c->resp_len = (size_t)n + ROM4_SIZE;
+  c->resp_sent = 0;
+  c->resp_queued = true;
+  c->state = HC_WRITE_RESPONSE;
 }
 
 // GET /api/v1/runner/meminfo —
@@ -4263,6 +4422,8 @@ static const route_t g_routes[] = {
     {"/api/v1/runner", M_GET | M_HEAD, handle_runner_status},
     {"/api/v1/debug", M_GET | M_HEAD, handle_debug_status},
     {"/api/v1/debug/log", M_GET | M_HEAD, handle_debug_log},
+    {"/api/v1/rom4", M_GET | M_HEAD | M_PUT, handle_rom4},
+    {"/api/v1/rom4/data", M_GET | M_HEAD, handle_rom4_data},
     {"/api/v1/system/health", M_GET | M_HEAD, handle_system_health},
 #if defined(_DEBUG) && (_DEBUG != 0)
     {"/api/v1/debug/test/panic", M_POST, handle_debug_test},

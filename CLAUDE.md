@@ -80,6 +80,7 @@ The Atari ST sees a 64 KB window at `$FA0000`–`$FAFFFF` (mirrored RP-side at `
 | `$FA2800` | `CMD_MAGIC_SENTINEL` | 4 B | m68k polls here for NOP/RESET/command words |
 | `$FA2804` | `RANDOM_TOKEN`, `RANDOM_TOKEN_SEED`, 60 × 4 B indexed shared variables | ~768 B | fixed-offset metadata block (first 512 B until `$FA2B00`) |
 | `$FA2B00` | `APP_FREE` | ~46 KB | contiguous arena for app buffers |
+| `$FA8B00` | `ROM4_OFFSET` | 1 KB | rom4 area inside `APP_FREE`: written over HTTP (`/api/v1/rom4`), read by ST programs, found through shared variables 20–22 (`rp/src/include/rom4.h`) |
 | `$FAE0C0` | `FRAMEBUFFER` | 8000 B | 320×200 monochrome framebuffer; sits at the top of the region so an overrun walks off the end of the 64 KB window instead of corrupting the metadata block |
 
 See `programming.md` for the full table and budget rules.

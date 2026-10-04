@@ -34,6 +34,7 @@
 #include "network.h"
 #include "pico/stdlib.h"
 #include "reset.h"
+#include "rom4.h"
 #include "romemul.h"
 #include "sdcard.h"
 #include "select.h"
@@ -2068,6 +2069,9 @@ void emul_start() {
   // RUNNER_CMD_DONE_EXECUTE (and future report-back commands) the
   // m68k Runner publishes via send_sync.
   runner_init();
+
+  // Publish the rom4 area before the ST can look for it.
+  rom4_init();
 
   // After this point, the remote computer can execute the code
 

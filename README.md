@@ -48,6 +48,9 @@ HTTP-management surface stitched on top.
   m68k (`*(volatile char *)(0xFBFF00 + c)`), captured RP-side and
   streamed to either an HTTP `tail -f` endpoint or USB CDC. No
   framing, no overhead, byte-exact.
+- **rom4 area** — 1 KB of the cartridge window that the
+  workstation writes over HTTP and any running ST program reads:
+  live parameters, scripted input for a test, a driver's state.
 - **Live setup menu** — graphical status icons (Wi-Fi / SD / USB
   CDC / Adv Vector), animated countdown bar, USB CDC attach state
   refreshed live as you plug / unplug.
@@ -313,7 +316,7 @@ resolving on your workstation. The API is the **single
 control surface** for every remote operation in this firmware
 — file management, program execution, debug streaming. Everything
 the rest of this README documents (`ping`, `gemdrive`, `runner`,
-`debug`) is a thin wrapper around HTTP calls to this service.
+`debug`, `rom4`) is a thin wrapper around HTTP calls to this service.
 
 | Family | HTTP endpoints | CLI prefix |
 | --- | --- | --- |
@@ -321,6 +324,7 @@ the rest of this README documents (`ping`, `gemdrive`, `runner`,
 | GEMDRIVE | `GET/PUT/DELETE/POST /api/v1/gemdrive/{volume,files,folders}/…` | `sidecart gemdrive …` |
 | Runner | `GET/POST /api/v1/runner/…` | `sidecart runner …` |
 | Debug | `GET /api/v1/debug`, `GET /api/v1/debug/log` | `sidecart debug …` |
+| rom4 | `GET /api/v1/rom4`, `GET /api/v1/rom4/data`, `PUT /api/v1/rom4` | `sidecart rom4 …` |
 
 You can drive the API directly from any HTTP client (`curl`,
 `wget`, `httpie`, a browser, a shell script, your editor's
@@ -1190,6 +1194,43 @@ python3 cli/sidecart.py runner run /HELLODBG.TOS
 Full endpoint reference + multi-consumer model is in
 [`docs/api.md`](docs/api.md#debug-traces).
 
+## rom4 area
+
+The other direction from debug traces: 1 KB of the cartridge
+window (`$FA8B00`–`$FA8EFF`) that the workstation writes and any
+program on the ST reads, whatever mode the firmware is in. DevOps
+gives the bytes no meaning; what they say is up to the program.
+They are zeroed when the Pico boots, survive an ST reset, and are
+lost when the Pico resets.
+
+Programs find the area through shared variable 20 at `$FA2860`:
+the long there is `'R4A1'` when the area exists, and the next two
+longs are its address and size. Read it in C or assembly as shown
+in [`docs/api.md`](docs/api.md#rom4-area); the ST cannot write
+it.
+
+```sh
+$ python3 cli/sidecart.py rom4 info
+address: $FA8B00
+size   : 1024 bytes
+magic  : $52344131 ('R4A1')
+
+$ python3 cli/sidecart.py rom4 write 0x10 01 02 03
+ok  3 bytes at offset 16 ($010)
+
+$ python3 cli/sidecart.py rom4 write 0 -f params.bin
+$ python3 cli/sidecart.py rom4 read            # hex dump
+$ python3 cli/sidecart.py rom4 read -o rom4.bin
+```
+
+Offsets are relative to the area (`0`–`1023`). Each 16-bit word
+changes in one store, so the ST never reads half of one, but a
+longer write can be seen part done; `PUT /api/v1/rom4` without an
+offset takes several ranges in one request, written in order, for
+programs that flip a flag after filling a buffer.
+`target/atarist/test/rom4/` builds `ROM4CHK.TOS`, which shows the
+first 32 bytes of the area and sends them to the debug stream.
+
 ## Project internals
 
 This section documents the on-cartridge memory map and module
@@ -1209,7 +1250,8 @@ mirrored at RP `0x20030000`. Layout:
   `RANDOM_TOKEN`, `RANDOM_TOKEN_SEED`, 60 × 4-byte indexed
   shared variables) sits at `$FA2800`.
 - The **`APP_FREE`** arena (~46 KB at `$FA2B00`) is the
-  contiguous space the app uses for its own buffers.
+  contiguous space the app uses for its own buffers. The 1 KB
+  **rom4 area** at `$FA8B00` is part of it.
 - The **framebuffer** (8000 B for 320×200 monochrome) sits at
   the very top of the region (`$FAE0C0`), so an overrun walks
   off the end of the 64 KB window instead of corrupting the
