@@ -4699,7 +4699,10 @@ static void write_error(http_conn_t *c, int status, const char *reason,
   if (n < 0) {
     n = 0;
   }
-  write_response(c, status, reason, "application/json", body, (size_t)n);
+  // Everything that answers 503 is worth retrying, and says so.
+  write_response_ex(c, status, reason, "application/json",
+                    (status == 503) ? "Retry-After: 1\r\n" : NULL, body,
+                    (size_t)n);
 }
 
 // A FatFs call failed. With the malloc panic off FatFs can
