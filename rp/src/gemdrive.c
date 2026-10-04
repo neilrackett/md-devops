@@ -1510,6 +1510,12 @@ void __not_in_flash_func(gemdrive_command_cb)(TransmissionProtocol *protocol,
   uint32_t phystop      = TPROTO_GET_NEXT32_PAYLOAD_PARAM32(payload);
   uint32_t totalRamKb   = TPROTO_GET_NEXT32_PAYLOAD_PARAM32(payload);
 
+  // HELLO comes once per ST boot. Nothing the previous session opened can
+  // still be in use, and a program that crashed never closed its files:
+  // left alone, the 8-slot table filled across resets until GEM could not
+  // even open the accessories.
+  handleResetGem();
+
   // Cache phystop + screenmem + mismatch flag for the menu render.
   // screenmem is just the screen_base value from XBIOS Logbase (same
   // as _v_bas_ad at $44E). The mismatch flag fires only when the
