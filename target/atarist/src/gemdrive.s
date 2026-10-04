@@ -1019,10 +1019,18 @@ gemdrive_trap:
 	add.l	2(a4), a5
 	add.l	6(a4), a5
 	add.l	14(a4), a5
-	tst.l	(a5)
+	; The fixup table follows the symbols, and a symbol table can have
+	; an odd size, so its first offset is read a byte at a time: a long
+	; read at an odd address is an address error on the 68000.
+	moveq	#3, d2
+.pexec_fixup_first:
+	lsl.l	#8, d0
+	move.b	(a5)+, d0
+	dbf	d2, .pexec_fixup_first
+	tst.l	d0
 	beq.s	.pexec_zero_bss_no_reloc
+	add.l	d0, a6
 	moveq	#0, d0
-	add.l	(a5)+, a6
 .pexec_fixup_apply:
 	add.l	d1, (a6)
 .pexec_fixup_next:
