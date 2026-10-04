@@ -1116,9 +1116,12 @@ static void __not_in_flash_func(handleFseekCall)(uint16_t *payload) {
 static void __not_in_flash_func(handleReadBuffCall)(uint16_t *payload) {
   uint16_t handle = (uint16_t)TPROTO_GET_PAYLOAD_PARAM32(payload);
   TPROTO_NEXT32_PAYLOAD_PTR(payload);
-  uint32_t bytesThisChunk = TPROTO_GET_PAYLOAD_PARAM32(payload);
+  /* uint32_t totalBytes = */ TPROTO_GET_PAYLOAD_PARAM32(payload);
   TPROTO_NEXT32_PAYLOAD_PTR(payload);
-  /* uint32_t pendingBytes = */ TPROTO_GET_PAYLOAD_PARAM32(payload);
+  // Size the chunk from what is still owed, not from the whole request:
+  // the m68k copies every byte a chunk returns, so the last chunk of an
+  // Fread over 4 KB ran up to 4 KB past the end of the caller's buffer.
+  uint32_t bytesThisChunk = TPROTO_GET_PAYLOAD_PARAM32(payload);
 
   GemFileSlot *slot = fileSlotByHandle(handle);
   if (slot == NULL) {
@@ -1140,8 +1143,11 @@ static void __not_in_flash_func(handleReadBuffCall)(uint16_t *payload) {
     writeAppFreeLong(GEMDRIVE_READ_BYTES_OFFSET, (uint32_t)-93);  // EIO_READ
     return;
   }
-  // m68k reads byte-pairs in BE order.
-  CHANGE_ENDIANESS_BLOCK16(dst, bytesRead & ~1u);
+  // m68k reads byte-pairs in BE order. An odd count is swapped up to the
+  // next pair, or its last byte reaches the ST as whatever the buffer
+  // held before: for a program with an odd size that is the 0 ending its
+  // fixup table, and the relocation runs on into the rest of memory.
+  CHANGE_ENDIANESS_BLOCK16(dst, bytesRead + (bytesRead & 1u));
   writeAppFreeLong(GEMDRIVE_READ_BYTES_OFFSET, (uint32_t)bytesRead);
 }
 
