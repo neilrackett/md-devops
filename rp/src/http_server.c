@@ -1604,11 +1604,8 @@ static void handle_runner_run(http_conn_t *c) {
   }
   if (!runner_require_accessory(c)) return;
   if (emul_isRunnerBusy()) {
-    write_response_ex(c, 503, "Service Unavailable", "application/json",
-                      "Retry-After: 1\r\n",
-                      "{\"ok\":false,\"code\":\"busy\","
-                      "\"message\":\"Runner is busy with another command\"}\n",
-                      0);
+    write_error(c, 503, "Service Unavailable", "busy",
+                "Runner is busy with another command");
     return;
   }
   if (c->content_length == 0) {
@@ -1747,11 +1744,8 @@ static void handle_runner_load(http_conn_t *c) {
   }
   if (!runner_require_accessory(c)) return;
   if (emul_isRunnerBusy()) {
-    write_response_ex(c, 503, "Service Unavailable", "application/json",
-                      "Retry-After: 1\r\n",
-                      "{\"ok\":false,\"code\":\"busy\","
-                      "\"message\":\"Runner is busy with another command\"}\n",
-                      0);
+    write_error(c, 503, "Service Unavailable", "busy",
+                "Runner is busy with another command");
     return;
   }
   if (emul_isRunnerLoadPending()) {
@@ -1915,11 +1909,8 @@ static void handle_runner_exec(http_conn_t *c) {
   }
   if (!runner_require_accessory(c)) return;
   if (emul_isRunnerBusy()) {
-    write_response_ex(c, 503, "Service Unavailable", "application/json",
-                      "Retry-After: 1\r\n",
-                      "{\"ok\":false,\"code\":\"busy\","
-                      "\"message\":\"Runner is busy with another command\"}\n",
-                      0);
+    write_error(c, 503, "Service Unavailable", "busy",
+                "Runner is busy with another command");
     return;
   }
   if (!emul_isRunnerLoadPending()) {
@@ -1969,11 +1960,8 @@ static void handle_runner_unload(http_conn_t *c) {
   }
   if (!runner_require_accessory(c)) return;
   if (emul_isRunnerBusy()) {
-    write_response_ex(c, 503, "Service Unavailable", "application/json",
-                      "Retry-After: 1\r\n",
-                      "{\"ok\":false,\"code\":\"busy\","
-                      "\"message\":\"Runner is busy with another command\"}\n",
-                      0);
+    write_error(c, 503, "Service Unavailable", "busy",
+                "Runner is busy with another command");
     return;
   }
   if (!emul_isRunnerLoadPending()) {
@@ -2044,11 +2032,8 @@ static void handle_runner_cd(http_conn_t *c) {
   }
   if (!runner_require_accessory(c)) return;
   if (emul_isRunnerBusy()) {
-    write_response_ex(c, 503, "Service Unavailable", "application/json",
-                      "Retry-After: 1\r\n",
-                      "{\"ok\":false,\"code\":\"busy\","
-                      "\"message\":\"Runner is busy with another command\"}\n",
-                      0);
+    write_error(c, 503, "Service Unavailable", "busy",
+                "Runner is busy with another command");
     return;
   }
   if (c->content_length == 0) {
@@ -2194,11 +2179,8 @@ static void handle_runner_res(http_conn_t *c) {
     return;
   }
   if (emul_isRunnerBusy()) {
-    write_response_ex(c, 503, "Service Unavailable", "application/json",
-                      "Retry-After: 1\r\n",
-                      "{\"ok\":false,\"code\":\"busy\","
-                      "\"message\":\"Runner is busy with another command\"}\n",
-                      0);
+    write_error(c, 503, "Service Unavailable", "busy",
+                "Runner is busy with another command");
     return;
   }
   if (c->content_length == 0) {
@@ -2845,11 +2827,8 @@ static void handle_runner_meminfo(http_conn_t *c) {
     return;
   }
   if (emul_isRunnerBusy()) {
-    write_response_ex(c, 503, "Service Unavailable", "application/json",
-                      "Retry-After: 1\r\n",
-                      "{\"ok\":false,\"code\":\"busy\","
-                      "\"message\":\"Runner is busy with another command\"}\n",
-                      0);
+    write_error(c, 503, "Service Unavailable", "busy",
+                "Runner is busy with another command");
     return;
   }
 
