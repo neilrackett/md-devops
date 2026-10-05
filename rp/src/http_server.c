@@ -1571,8 +1571,8 @@ static bool runner_require_accessory(http_conn_t *c) {
     return true;
   }
   write_error(c, 409, "Conflict", "accessory_not_loaded",
-              "TSR mode: DEVOPS.ACC has not started; GEM loads it from the "
-              "root of the boot drive once the ST reaches the desktop");
+              "TSR mode: DEVOPS.ACC has not reported in yet; GEM starts it "
+              "once the ST reaches the desktop");
   return false;
 }
 
