@@ -1563,6 +1563,16 @@ static void runner_write_cmdline(const char *cmdline) {
   }
 }
 
+// The Runner's preconditions, one helper each, so every handler refuses with
+// the same code and words. Each writes the error and returns false.
+static bool runner_require_active(http_conn_t *c) {
+  if (emul_isRunnerActive()) return true;
+  write_error(c, 409, "Conflict", "runner_inactive",
+              "Runner is not active; boot via [U], or [G] with the "
+              "GEMDRIVE Runner on");
+  return false;
+}
+
 // In TSR mode the foreground Runner commands are served by DEVOPS.ACC,
 // which GEM only starts once the ST has booted to the desktop. Until it
 // reports in there is nothing on the ST to pick a command up.
@@ -1574,6 +1584,20 @@ static bool runner_require_accessory(http_conn_t *c) {
               "GEMDRIVE Runner: DEVOPS.ACC has not reported in yet; GEM "
               "starts it once the ST reaches the desktop");
   return false;
+}
+
+static bool runner_require_idle(http_conn_t *c) {
+  if (!emul_isRunnerBusy()) return true;
+  write_error(c, 503, "Service Unavailable", "busy",
+              "Runner is busy with another command");
+  return false;
+}
+
+// Every foreground command: a Runner, something on the ST to serve the
+// command, and no other command in flight.
+static bool runner_require_foreground(http_conn_t *c) {
+  return runner_require_active(c) && runner_require_accessory(c) &&
+         runner_require_idle(c);
 }
 
 // A synchronous command that timed out is still in the sentinel, and the
@@ -1597,18 +1621,7 @@ static void runner_withdraw_command(uint32_t command) {
 // sentinel. The m68k's Pexec result is reported asynchronously via
 // the chandler RUNNER_CMD_DONE_EXECUTE callback (runner.c).
 static void handle_runner_run(http_conn_t *c) {
-  if (!emul_isRunnerActive()) {
-    write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner is not active; boot via [U], or [G] with the "
-                "GEMDRIVE Runner on");
-    return;
-  }
-  if (!runner_require_accessory(c)) return;
-  if (emul_isRunnerBusy()) {
-    write_error(c, 503, "Service Unavailable", "busy",
-                "Runner is busy with another command");
-    return;
-  }
+  if (!runner_require_foreground(c)) return;
   if (c->content_length == 0) {
     write_error(c, 411, "Length Required", "length_required",
                 "JSON body required");
@@ -1738,18 +1751,7 @@ static void handle_runner_run(http_conn_t *c) {
 // outer timeout as a generous worst-case.
 #define RUNNER_LOAD_TIMEOUT_US 10000000
 static void handle_runner_load(http_conn_t *c) {
-  if (!emul_isRunnerActive()) {
-    write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner is not active; boot via [U], or [G] with the "
-                "GEMDRIVE Runner on");
-    return;
-  }
-  if (!runner_require_accessory(c)) return;
-  if (emul_isRunnerBusy()) {
-    write_error(c, 503, "Service Unavailable", "busy",
-                "Runner is busy with another command");
-    return;
-  }
+  if (!runner_require_foreground(c)) return;
   if (emul_isRunnerLoadPending()) {
     write_error(c, 409, "Conflict", "program_already_loaded",
                 "A program is already loaded; exec it or reset Runner first");
@@ -1904,18 +1906,7 @@ static void handle_runner_load(http_conn_t *c) {
 // arrives asynchronously via DONE_EXEC and surfaces on the
 // next /runner/status as last_exit_code.
 static void handle_runner_exec(http_conn_t *c) {
-  if (!emul_isRunnerActive()) {
-    write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner is not active; boot via [U], or [G] with the "
-                "GEMDRIVE Runner on");
-    return;
-  }
-  if (!runner_require_accessory(c)) return;
-  if (emul_isRunnerBusy()) {
-    write_error(c, 503, "Service Unavailable", "busy",
-                "Runner is busy with another command");
-    return;
-  }
+  if (!runner_require_foreground(c)) return;
   if (!emul_isRunnerLoadPending()) {
     write_error(c, 409, "Conflict", "no_program_loaded",
                 "No program is loaded; call /runner/load first");
@@ -1956,18 +1947,7 @@ static void handle_runner_exec(http_conn_t *c) {
 // no_program_loaded if nothing to free.
 #define RUNNER_UNLOAD_TIMEOUT_US 5000000
 static void handle_runner_unload(http_conn_t *c) {
-  if (!emul_isRunnerActive()) {
-    write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner is not active; boot via [U], or [G] with the "
-                "GEMDRIVE Runner on");
-    return;
-  }
-  if (!runner_require_accessory(c)) return;
-  if (emul_isRunnerBusy()) {
-    write_error(c, 503, "Service Unavailable", "busy",
-                "Runner is busy with another command");
-    return;
-  }
+  if (!runner_require_foreground(c)) return;
   if (!emul_isRunnerLoadPending()) {
     write_error(c, 409, "Conflict", "no_program_loaded",
                 "No program is loaded; nothing to unload");
@@ -2029,18 +2009,7 @@ static void handle_runner_unload(http_conn_t *c) {
 // m68k's Dsetpath result lands asynchronously via the chandler
 // RUNNER_CMD_DONE_CD callback (runner.c).
 static void handle_runner_cd(http_conn_t *c) {
-  if (!emul_isRunnerActive()) {
-    write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner is not active; boot via [U], or [G] with the "
-                "GEMDRIVE Runner on");
-    return;
-  }
-  if (!runner_require_accessory(c)) return;
-  if (emul_isRunnerBusy()) {
-    write_error(c, 503, "Service Unavailable", "busy",
-                "Runner is busy with another command");
-    return;
-  }
+  if (!runner_require_foreground(c)) return;
   if (c->content_length == 0) {
     write_error(c, 411, "Length Required", "length_required",
                 "JSON body required");
@@ -2173,23 +2142,14 @@ static void runner_write_rez(uint16_t rez) {
 // with the requested rez. Errno (i32) returns via RUNNER_CMD_DONE_RES
 // and surfaces as `last_res_errno` in the status envelope.
 static void handle_runner_res(http_conn_t *c) {
-  if (!emul_isRunnerActive()) {
-    write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner is not active; boot via [U], or [G] with the "
-                "GEMDRIVE Runner on");
-    return;
-  }
+  if (!runner_require_active(c)) return;
   if (emul_isRunnerTsrMode()) {
     write_error(c, 409, "Conflict", "unsupported_in_tsr",
                 "GEMDRIVE Runner: changing resolution under GEM is not "
                 "supported");
     return;
   }
-  if (emul_isRunnerBusy()) {
-    write_error(c, 503, "Service Unavailable", "busy",
-                "Runner is busy with another command");
-    return;
-  }
+  if (!runner_require_idle(c)) return;
   if (c->content_length == 0) {
     write_error(c, 411, "Length Required", "length_required",
                 "JSON body required");
@@ -2268,12 +2228,7 @@ static void handle_runner_res(http_conn_t *c) {
 //
 // No busy-lock gate — escaping wedged state is the whole point.
 static void handle_runner_adv_jump(http_conn_t *c) {
-  if (!emul_isRunnerActive()) {
-    write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner is not active; boot via [U], or [G] with the "
-                "GEMDRIVE Runner on");
-    return;
-  }
+  if (!runner_require_active(c)) return;
   if (emul_getRunnerAdvHookVector() != RUNNER_HOOK_VECTOR_VBL) {
     write_error(c, 409, "Conflict", "wrong_hook",
                 "adv jump requires the VBL hook ($70). Switch "
@@ -2475,12 +2430,7 @@ static void adv_load_finish_ok(http_conn_t *c) {
 // already written).
 static bool handle_runner_adv_load_init(http_conn_t *c, struct pbuf *seg,
                                         size_t body_off, size_t leftover) {
-  if (!emul_isRunnerActive()) {
-    write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner is not active; boot via [U], or [G] with the "
-                "GEMDRIVE Runner on");
-    return false;
-  }
+  if (!runner_require_active(c)) return false;
   if (emul_getRunnerAdvHookVector() != RUNNER_HOOK_VECTOR_VBL) {
     write_error(c, 409, "Conflict", "wrong_hook",
                 "adv load requires the VBL hook ($70). Switch "
@@ -2613,12 +2563,7 @@ static bool handle_runner_adv_load_init(http_conn_t *c, struct pbuf *seg,
 // Intentionally skips the busy-lock gate — the busy state is what
 // we want to escape (a wedged Pexec'd program holds it set forever).
 static void handle_runner_adv_meminfo(http_conn_t *c) {
-  if (!emul_isRunnerActive()) {
-    write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner is not active; boot via [U], or [G] with the "
-                "GEMDRIVE Runner on");
-    return;
-  }
+  if (!runner_require_active(c)) return;
 
   uint32_t now_ms = (uint32_t)to_ms_since_boot(get_absolute_time());
   emul_recordRunnerMeminfoSubmit(now_ms);
@@ -2831,17 +2776,8 @@ static void handle_debug_log(http_conn_t *c) {
 // config), and a simple "decoded" boolean derived from the banks.
 #define RUNNER_MEMINFO_TIMEOUT_US 1000000
 static void handle_runner_meminfo(http_conn_t *c) {
-  if (!emul_isRunnerActive()) {
-    write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner is not active; boot via [U], or [G] with the "
-                "GEMDRIVE Runner on");
-    return;
-  }
-  if (emul_isRunnerBusy()) {
-    write_error(c, 503, "Service Unavailable", "busy",
-                "Runner is busy with another command");
-    return;
-  }
+  if (!runner_require_active(c)) return;
+  if (!runner_require_idle(c)) return;
 
   uint32_t now_ms = (uint32_t)to_ms_since_boot(get_absolute_time());
   emul_recordRunnerMeminfoSubmit(now_ms);
@@ -2903,12 +2839,7 @@ static void handle_runner_meminfo(http_conn_t *c) {
 // we want to escape. 409 runner_inactive when the user hasn't
 // picked [U] at boot.
 static void handle_runner_reset(http_conn_t *c) {
-  if (!emul_isRunnerActive()) {
-    write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner is not active; boot via [U], or [G] with the "
-                "GEMDRIVE Runner on");
-    return;
-  }
+  if (!runner_require_active(c)) return;
   uint32_t now_ms = (uint32_t)to_ms_since_boot(get_absolute_time());
   emul_recordRunnerCommand(RUNNER_LAST_RESET, now_ms);
   SEND_COMMAND_TO_DISPLAY(RUNNER_ADV_CMD_RESET);
@@ -3734,13 +3665,8 @@ static void handle_file_download(http_conn_t *c,
   // Body-stream lock. A streaming GET counts as a body request; if
   // another download or upload is already in flight, return 503.
   if (g_body_stream_busy) {
-    char body[160];
-    int n = snprintf(body, sizeof(body),
-                     "{\"ok\":false,\"code\":\"busy\","
-                     "\"message\":\"Another body request is in progress\"}\n");
-    if (n < 0) n = 0;
-    write_response_ex(c, 503, "Service Unavailable", "application/json",
-                      "Retry-After: 1\r\n", body, (size_t)n);
+    write_error(c, 503, "Service Unavailable", "busy",
+                "Another body request is in progress");
     return;
   }
 
@@ -3999,13 +3925,8 @@ static bool handle_file_upload_init(http_conn_t *c, struct pbuf *seg,
                                     size_t body_off, size_t leftover) {
   // Single-streamer lock.
   if (g_body_stream_busy) {
-    char body[160];
-    int n = snprintf(body, sizeof(body),
-                     "{\"ok\":false,\"code\":\"busy\","
-                     "\"message\":\"Another body request is in progress\"}\n");
-    if (n < 0) n = 0;
-    write_response_ex(c, 503, "Service Unavailable", "application/json",
-                      "Retry-After: 1\r\n", body, (size_t)n);
+    write_error(c, 503, "Service Unavailable", "busy",
+                "Another body request is in progress");
     return false;
   }
 
