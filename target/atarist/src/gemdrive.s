@@ -94,6 +94,7 @@ CMD_DTA_RELEASE_CALL	equ ($8B + APP_GEMDRVEMUL)
 
 ; --- GEMDOS function codes used internally ---
 GEMDOS_Dsetdrv		equ $E
+GEMDOS_Dsetpath		equ $3B
 GEMDOS_Fgetdta		equ $2F
 GEMDOS_Pexec		equ $4B
 GEMDOS_Mfree		equ $49
@@ -307,10 +308,27 @@ install_entry:
 	cmp.w	#2, d0
 	bne.s	.skip_bootdev
 	move.w	d0, _bootdev.w
+
+	; Make C:\ current as well. _bootdev alone was not enough: TOS
+	; looked for \AUTO on the current drive, still A: here, and never
+	; asked GEMDRIVE for it, so nothing in C:\AUTO ran. md-drives-
+	; emulator sets both for the same reason.
+	move.w	d0, -(sp)
+	move.w	#GEMDOS_Dsetdrv, -(sp)
+	trap	#1
+	addq.l	#4, sp
+	pea	root_path(pc)
+	move.w	#GEMDOS_Dsetpath, -(sp)
+	trap	#1
+	addq.l	#6, sp
 .skip_bootdev:
 
 	movem.l	(sp)+, d0-d7/a0-a6
 	rts
+
+root_path:
+	dc.b	$5C, 0				; "\"
+	even
 
 ; ====================================================================
 ; diagnostic_entry — reachable via [G]EMDRIVE terminal command
