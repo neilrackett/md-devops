@@ -106,7 +106,7 @@ If you don't press anything within ~20 s, the firmware **auto-fires
 [U]Runner** — Runner is the more useful default for unattended
 boots.
 
-### SELECT button — Pico-side reset / factory-reset
+### SELECT button — Booster, reset, factory reset
 
 The cartridge's physical **SELECT** button is wired so a press
 on the Pico itself can recover the device without needing the
@@ -114,6 +114,7 @@ ST's keyboard:
 
 | Press | Action |
 | --- | --- |
+| Held while the ST is switched on | **Booster.** The Pico goes straight to the Booster app instead of starting DevOps, the same as `[X]` in the setup menu, and works even when DevOps cannot reach its menu. |
 | Short tap (< 10 s) | **Soft reset** of the Pico. The cartridge boots back into the setup menu. The ST's TOS state is unaffected, but on the next ST cold reset the firmware re-handshakes from scratch. |
 | Long press (≥ 10 s, hold steady) | **Factory reset.** The Pico erases its flash-stored aconfig (drive letter, reloc address, hook vector, etc.) and reboots. Use this if a setting got the device into a state where the menu won't come up — power-cycle the ST afterwards so it sees the cleared cartridge. |
 
