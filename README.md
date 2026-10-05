@@ -98,7 +98,7 @@ seconds. From there you have five top-level commands:
 | --- | --- |
 | `[U]` | **Runner mode** (recommended). GEMDRIVE comes up, plus the Runner control surface for `runner run` / `load` / `exec` / etc. |
 | `[G]` | GEMDRIVE-only — ST drops straight into the emulated drive but does **not** activate the Runner. Use this if you only want file emulation and don't need the workstation to drive the ST. |
-| `[S]` | **TSR mode** (proof of concept). GEMDRIVE and the Runner's interrupt hook stay resident and the ST boots on through the AUTO folder to the GEM desktop, where the `DEVOPS.ACC` desk accessory serves `runner run` / `load` / `exec`. See [TSR mode](#tsr-mode--runner-commands-from-the-gem-desktop). |
+| `[S]` | **TSR mode**. GEMDRIVE and the Runner's interrupt hook stay resident and the ST boots on through the AUTO folder to the GEM desktop, where the `DEVOPS.ACC` desk accessory serves `runner run` / `load` / `exec`. See [TSR mode](#tsr-mode--runner-commands-from-the-gem-desktop). |
 | `[X]` | Return to the Booster menu (e.g. to install another app). |
 | any key | Halt the auto-launch countdown so the menu stays up indefinitely while you read it. |
 
@@ -922,8 +922,9 @@ Same shell-quoting rule as `adv jump`.
 
 ### TSR mode — Runner commands from the GEM desktop
 
-> **Proof of concept.** Tested in emulation (Hatari with EmuTOS),
-> not yet on Atari TOS.
+> Tested on a Mega STE with TOS 2.06, with and without an ACSI2STM
+> hard disk, and in Hatari with EmuTOS. Other machines and TOS
+> versions have not been tried.
 
 `[U]` runs the Runner from the cartridge's boot hook, before the
 AUTO folder, the desk accessories and GEM have loaded, so a program
@@ -949,12 +950,19 @@ opens an alert with the Runner's current directory and the last
 command the accessory ran, with its exit code or result. Commands wait
 while the alert is open.
 
-GEM loads accessories from the root of the boot drive, and GEMDRIVE
-is the boot drive only when it is `C:`. With another drive letter,
-`[S]` still writes `DEVOPS.ACC` to the root of the GEMDRIVE folder:
-copy it from there to the root of your boot drive. Until you do,
-`[S]` gives you `[G]` plus `runner reset`, `runner meminfo` and the
-`runner adv` commands.
+With GEMDRIVE as `C:`, GEM starts the accessory from `C:\`, whether
+or not there is another hard disk. With another drive letter, `[S]`
+still writes `DEVOPS.ACC` to the root of the GEMDRIVE folder: copy it
+from there to the root of your boot drive. Until you do, `[S]` gives
+you `[G]` plus `runner reset`, `runner meminfo` and the `runner adv`
+commands.
+
+TOS runs the AUTO folder from the boot drive. With GEMDRIVE as `C:`
+and no other hard disk, that is `C:`, so AUTO programs go in an
+`AUTO` folder inside the GEMDRIVE folder. A hard-disk driver that
+loads after the cartridge can take the boot drive for its own first
+drive: with an ACSI2STM, which moves itself to `D:`, TOS runs
+`D:\AUTO` instead, so AUTO programs go there.
 
 | Command | In TSR mode |
 | --- | --- |

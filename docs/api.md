@@ -130,9 +130,9 @@ Runner-specific codes (see *Runner mode* below):
 - `accessory_not_loaded` — TSR mode (`[S]`): `DEVOPS.ACC` has not
   reported in yet, so nothing on the ST serves `run`, `cd`, `load`,
   `exec` or `unload`. It reports in when GEM starts it at the end of
-  the boot. `[S]` writes it to the root of the GEMDRIVE folder, which
-  is the boot drive when GEMDRIVE is `C:`; with another drive letter
-  it has to be copied to the boot drive by hand.
+  the boot. `[S]` writes it to the root of the GEMDRIVE folder, where
+  GEM finds it when GEMDRIVE is `C:`; with another drive letter it
+  has to be copied to the boot drive by hand.
 - `unsupported_in_tsr` — `runner res` in TSR mode: changing the
   resolution under GEM would leave the desktop drawn for the old one.
 - `busy` — another foreground Runner command is in flight. Every
@@ -574,8 +574,8 @@ below the foreground endpoints.
 `[S]` in the setup menu installs GEMDRIVE and the Advanced Runner hook,
 then lets the ST boot on through the AUTO folder to the GEM desktop
 instead of entering the poll loop. The foreground commands are served
-by the desk accessory `DEVOPS.ACC`, which GEM starts from the root of
-the boot drive. `[S]` first writes the copy built into the firmware to
+by the desk accessory `DEVOPS.ACC`, which GEM starts from `C:\` when
+GEMDRIVE is `C:`. `[S]` first writes the copy built into the firmware to
 the root of the GEMDRIVE folder, unless an identical one is there. The API is the same, with these differences:
 
 - `run`, `cd`, `load`, `exec` and `unload` answer `409
