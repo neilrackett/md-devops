@@ -225,6 +225,10 @@ void emul_recordRunnerCommand(runner_last_command_t cmd, uint32_t now_ms) {
     runnerCwdPrev[0] = '\0';
     runnerLastHasCdErrno = false;
     runnerLastCdErrno = 0;
+    // The accessory goes down with the ST. Left set until the Runner's
+    // HELLO, several seconds into the boot, it let a foreground command
+    // through to an ST that was still rebooting, and the command was lost.
+    runnerAccessoryAttached = false;
   }
 }
 
@@ -523,6 +527,8 @@ void emul_onGemdriveHello(void) {
   runnerCwdPrev[0] = '\0';
   runnerLastHasCdErrno = false;
   runnerLastCdErrno = 0;
+  // Likewise the accessory: a physical reset is first seen here.
+  runnerAccessoryAttached = false;
   DPRINTF("emul: GEMDRIVE HELLO observed with runnerActive=true → "
           "scheduling relaunch\n");
 }

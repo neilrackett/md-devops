@@ -585,7 +585,9 @@ the root of the GEMDRIVE folder, unless an identical one is there. The API is th
 - `res` answers `409 unsupported_in_tsr`.
 - `GET /api/v1/runner` reports `"tsr": true`, and `"accessory"` once
   the accessory has reported in.
-- After `reset` the ST boots back into TSR mode.
+- After `reset` the ST boots back into TSR mode, and the foreground
+  commands answer `409 accessory_not_loaded` again until the accessory
+  has reported in, so a script should wait for `"accessory": true`.
 
 The accessory can only launch plain TOS programs (`.TOS`, `.TTP`, and
 `.PRG` files that don't use GEM). It sends its `[RUN  ]` / `[EXIT n]`

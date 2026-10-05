@@ -960,7 +960,7 @@ copy it from there to the root of your boot drive. Until you do,
 | --- | --- |
 | `runner run` / `load` / `exec` / `unload` / `cd` | Served by `DEVOPS.ACC`. `409 accessory_not_loaded` until it has started. |
 | `runner meminfo` | Answered by the interrupt hook, as `runner adv meminfo` is. |
-| `runner reset`, `runner adv …` | Unchanged. After a reset the ST boots back into TSR mode. |
+| `runner reset`, `runner adv …` | Unchanged. After a reset the ST boots back into TSR mode; wait for `DEVOPS.ACC loaded` again before the next foreground command. |
 | `runner res` | `409 unsupported_in_tsr` — changing the resolution under GEM would leave the desktop drawn for the old one. |
 
 To launch a program the accessory does what the desktop does for a
