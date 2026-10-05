@@ -103,7 +103,7 @@ MU_TIMER		equ $20
 AC_OPEN			equ 40
 
 POLL_MS			equ 100
-STRIP_MAX		equ 4000	; menu bar strip: 20 rows of 160 bytes, rounded up
+STRIP_MAX		equ 3200	; menu bar strip: up to 20 rows of 160 bytes
 CWD_SHOWN		equ 23		; cwd characters that fit an alert line
 
 	include	"inc/sidecart_macros.s"
@@ -123,11 +123,14 @@ aes	macro
 	trap	#2
 	endm
 
-; Report a result to the RP: \1 report command, \2 the command it answers,
-; d3 = i32 payload. The RP clears the sentinel before it acknowledges, so
-; only a report that timed out leaves the command there; remember it so
-; poll does not run it a second time.
+; Report result to the RP: \1 report command, \2 the command it answers,
+; which is also what the status alert shows as the last command. The RP
+; clears the sentinel before it acknowledges, so only a report that timed
+; out leaves the command there; remember it so poll does not run it a
+; second time.
 report	macro
+	move.l	#\2, last_cmd
+	move.l	result, d3
 	send_sync \1, 4
 	tst.w	d0
 	beq.s	.\@acked
@@ -208,7 +211,6 @@ poll:
 
 ; Pexec(0) RUNNER_PATH with RUNNER_CMDLINE.
 do_execute:
-	move.l	d6, last_cmd			; for the status alert
 	trace	text_run
 	lea	RUNNER_PATH, a1
 	bsr	debug_puts
@@ -231,13 +233,11 @@ do_execute:
 	bsr	debug_puts
 	trace	text_terminated
 
-	move.l	result, d3
 	report	RUNNER_CMD_DONE_EXECUTE, RUNNER_CMD_EXECUTE
 	rts
 
 ; Pexec(3): load only. The program keeps the cwd it was loaded with.
 do_load:
-	move.l	d6, last_cmd			; for the status alert
 	trace	text_load
 	lea	RUNNER_PATH, a1
 	bsr	debug_puts
@@ -258,14 +258,12 @@ do_load:
 	bsr	debug_dec
 	trace	text_crlf
 
-	move.l	result, d3
 	report	RUNNER_CMD_DONE_LOAD, RUNNER_CMD_LOAD
 	rts
 
 ; Pexec(4) the basepage a previous load returned. The basepage goes in
 ; the command-line slot.
 do_exec:
-	move.l	d6, last_cmd			; for the status alert
 	trace	text_exec
 	move.l	RUNNER_BASEPAGE, d3
 	bsr	debug_dec
@@ -285,13 +283,11 @@ do_exec:
 	bsr	trace_exit
 	trace	text_terminated
 
-	move.l	result, d3
 	report	RUNNER_CMD_DONE_EXEC, RUNNER_CMD_EXEC
 	rts
 
 ; Mfree the loaded program's basepage.
 do_unload:
-	move.l	d6, last_cmd			; for the status alert
 	trace	text_unload
 	move.l	RUNNER_BASEPAGE, d3
 	bsr	debug_dec
@@ -308,14 +304,12 @@ do_unload:
 	bsr	debug_dec
 	trace	text_crlf
 
-	move.l	result, d3
 	report	RUNNER_CMD_DONE_UNLOAD, RUNNER_CMD_UNLOAD
 	rts
 
 ; Dsetpath RUNNER_PATH, relative to the Runner's cwd, and keep the result
 ; as the new cwd.
 do_cd:
-	move.l	d6, last_cmd			; for the status alert
 	trace	text_cd
 	lea	RUNNER_PATH, a1
 	bsr	debug_puts
@@ -339,7 +333,6 @@ do_cd:
 	move.b	#$5C, acc_cwd			; backslash
 	clr.b	acc_cwd+1
 .reported:
-	move.l	result, d3
 	report	RUNNER_CMD_DONE_CD, RUNNER_CMD_CD
 	rts
 
@@ -633,7 +626,7 @@ text_menu_entry:
 	dc.b	"  DevOps Runner", 0
 ; Alert lines stay within 30 characters, the TOS 1.x limit.
 text_alert_head:
-	dc.b	"[1][DevOps Runner (TSR mode)|Waiting for commands.|Dir: ", 0
+	dc.b	"[1][DevOps GEMDRIVE Runner|Waiting for commands.|Dir: ", 0
 text_alert_last:
 	dc.b	"|Last: ", 0
 text_last_none:
