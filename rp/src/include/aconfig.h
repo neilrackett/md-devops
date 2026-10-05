@@ -16,6 +16,10 @@
 #define ACONFIG_PARAM_FOLDER "FOLDER"
 #define ACONFIG_PARAM_MODE "MODE"
 
+// What the boot countdown launches: the menu key of the last launch, "U"
+// (Runner) or "G" (GEMDRIVE), so a power cycle comes back the way it went.
+#define ACONFIG_PARAM_BOOT_MODE "BOOT_MODE"
+
 // GEMDRIVE_RELOC_ADDR is the address where the GEMDRIVE blob gets
 // copied; DEVOPS_MEMTOP is the global _memtop ($436) the cartridge
 // will install — it is a microfirmware-wide setting, not
