@@ -580,7 +580,9 @@ the AUTO folder to the GEM desktop instead of entering the poll loop.
 The foreground commands are served by the desk accessory `DEVOPS.ACC`,
 which GEM starts from `C:\` when GEMDRIVE is `C:`. `[G]` first writes
 the copy built into the firmware to the root of the GEMDRIVE folder,
-unless an identical one is there. The API is the same, with these differences:
+unless an identical one is there. With the GEMDRIVE Runner off, `[G]`
+deletes `DEVOPS.ACC` from there instead, whichever firmware wrote it.
+The API is the same, with these differences:
 
 - `run`, `cd`, `load`, `exec` and `unload` answer `409
   accessory_not_loaded` until the accessory has reported in.

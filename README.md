@@ -942,7 +942,10 @@ The code and the API call this TSR mode.
 The GEMDRIVE Runner is on unless you turn it off: `Ru[n]ner` in the
 GEMDRIVE section of the setup menu shows it, and `[N]` toggles it.
 With it off, `[G]` is plain GEMDRIVE: no accessory, no interrupt
-hook, no Runner.
+hook, no Runner. It also deletes `DEVOPS.ACC` from the root of the
+GEMDRIVE folder, so GEM does not load an accessory with nothing to
+serve. The name is the firmware's: with the Runner on, `[G]` replaces
+any `DEVOPS.ACC` there that differs from its own.
 
 Press `[G]` at the setup menu. The firmware carries the accessory
 it was built with and writes it to the root of the GEMDRIVE folder

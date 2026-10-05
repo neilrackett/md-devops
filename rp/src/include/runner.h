@@ -161,10 +161,18 @@ typedef struct {
  * @brief Write the DEVOPS.ACC this firmware was built with to the root
  *        of the GEMDRIVE folder, unless an identical copy is already
  *        there, so the accessory always speaks this firmware's protocol.
- *        Called when the user picks TSR mode, before the ST boots GEM.
+ *        Called when [G] starts with the GEMDRIVE Runner on (TSR mode),
+ *        before the ST boots GEM.
  * @return false if the file could not be written.
  */
 bool runner_installAccessory(void);
+
+/**
+ * @brief Delete DEVOPS.ACC from the root of the GEMDRIVE folder, whatever
+ *        firmware wrote it, so GEM does not load an accessory with nothing
+ *        to serve. Called when [G] starts with the GEMDRIVE Runner off.
+ */
+void runner_removeAccessory(void);
 
 /**
  * @brief Register the Runner's chandler callback for m68k → RP

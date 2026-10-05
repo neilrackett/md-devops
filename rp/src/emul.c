@@ -1615,6 +1615,9 @@ void cmdGemdrive(const char *arg) {
     SEND_COMMAND_TO_DISPLAY(DISPLAY_COMMAND_START_TSR);
     return;
   }
+  // Plain GEMDRIVE: take back the accessory the GEMDRIVE Runner wrote, or GEM
+  // would load it with nothing to serve.
+  runner_removeAccessory();
   // commit firmware mode (debug-byte filter starts
   // accepting captures from this point on).
   emul_enterFirmwareMode();

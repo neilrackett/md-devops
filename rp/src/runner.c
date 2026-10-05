@@ -204,20 +204,25 @@ static bool accessoryMatches(const char *path) {
   return same;
 }
 
-bool runner_installAccessory(void) {
+// DEVOPS.ACC's path: the root of the GEMDRIVE folder.
+static bool accessoryPath(char *path, size_t cap) {
   SettingsConfigEntry *folder =
       settings_find_entry(aconfig_getContext(), ACONFIG_PARAM_GEMDRIVE_FOLDER);
-  const char *root = (folder != NULL && folder->value[0] != '\0')
-                         ? folder->value
-                         : "/devops";
-  char path[96];
+  const char *root =
+      (folder != NULL && folder->value[0] != '\0') ? folder->value : "/devops";
   size_t rootLen = strlen(root);
-  int n = snprintf(path, sizeof(path), "%s%s" RUNNER_ACC_NAME, root,
+  int n = snprintf(path, cap, "%s%s" RUNNER_ACC_NAME, root,
                    (rootLen > 0 && root[rootLen - 1] == '/') ? "" : "/");
-  if (n < 0 || (size_t)n >= sizeof(path)) {
+  if (n < 0 || (size_t)n >= cap) {
     DPRINTF("Runner: GEMDRIVE folder too long for %s\n", RUNNER_ACC_NAME);
     return false;
   }
+  return true;
+}
+
+bool runner_installAccessory(void) {
+  char path[96];
+  if (!accessoryPath(path, sizeof(path))) return false;
   if (accessoryMatches(path)) {
     DPRINTF("Runner: %s is up to date\n", path);
     return true;
@@ -238,6 +243,18 @@ bool runner_installAccessory(void) {
   }
   DPRINTF("Runner: wrote %s (%u bytes)\n", path, (unsigned)written);
   return true;
+}
+
+void runner_removeAccessory(void) {
+  char path[96];
+  if (!accessoryPath(path, sizeof(path))) return;
+  // Whatever its contents: runner_installAccessory() overwrites any file of
+  // this name, so the name is the firmware's, and the copy is most often an
+  // older firmware's after an upgrade.
+  FRESULT fr = f_unlink(path);
+  if (fr != FR_NO_FILE) {
+    DPRINTF("Runner: removed %s (FatFs %d)\n", path, (int)fr);
+  }
 }
 
 void runner_init(void) {
