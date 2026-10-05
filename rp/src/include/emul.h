@@ -72,11 +72,11 @@ void emul_start();
 bool emul_isRunnerActive(void);
 
 /**
- * @brief Whether the user picked TSR mode ([S] in the setup menu). The
- *        Runner is active as well, but its foreground commands are
- *        served by DEVOPS.ACC on the GEM desktop rather than by the
- *        cartridge's poll loop. Stays set for the RP power cycle, like
- *        emul_isRunnerActive().
+ * @brief Whether [G] launched TSR mode, which the menu calls the GEMDRIVE
+ *        Runner (Ru[n]ner on). The Runner is active as well, but its
+ *        foreground commands are served by DEVOPS.ACC on the GEM desktop
+ *        rather than by the cartridge's poll loop. Stays set for the RP
+ *        power cycle, like emul_isRunnerActive().
  */
 bool emul_isRunnerTsrMode(void);
 

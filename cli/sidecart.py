@@ -1098,7 +1098,8 @@ def cmd_runner_status(args: argparse.Namespace) -> int:
 
     active = parsed.get("active", False)
     if not active:
-        print("Runner mode is not active. Boot via [U] or [S] to enable.")
+        print("Runner is not active. Boot via [U], or [G] with the GEMDRIVE "
+              "Runner on.")
         return EXIT_OK
 
     busy = parsed.get("busy", False)
@@ -1110,7 +1111,7 @@ def cmd_runner_status(args: argparse.Namespace) -> int:
     print(f"active   : true")
     if parsed.get("tsr", False):
         accessory = "loaded" if parsed.get("accessory", False) else "not loaded yet"
-        print(f"mode     : TSR (DEVOPS.ACC {accessory})")
+        print(f"mode     : GEMDRIVE Runner (DEVOPS.ACC {accessory})")
     print(f"busy     : {'yes' if busy else 'no'}")
     print(f"cwd      : {cwd}")
     last_res_errno = parsed.get("last_res_errno")

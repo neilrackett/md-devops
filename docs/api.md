@@ -123,14 +123,16 @@ needs the card answers this the same way: `volume`, listings, downloads,
 uploads, folder operations, `runner load` and `runner run`. It is not a fault
 to recover from by hand: the firmware retries the mount every two seconds, so
 inserting a working card clears it within a few seconds with no reset, and the
-setup menu shows `SD: NO CARD` meanwhile and refuses `[G]`, `[U]` and `[S]`.
+setup menu shows `SD: NO CARD` meanwhile and refuses `[G]` and `[U]`.
 
 Runner-specific codes (see *Runner mode* below):
-- `runner_inactive` — the user didn't pick `[U]` or `[S]` at boot.
-- `accessory_not_loaded` — TSR mode (`[S]`): `DEVOPS.ACC` has not
+- `runner_inactive` — the Runner isn't running: the user picked neither
+  `[U]` nor `[G]` with the GEMDRIVE Runner on.
+- `accessory_not_loaded` — TSR mode (`[G]` with the GEMDRIVE Runner
+  on): `DEVOPS.ACC` has not
   reported in yet, so nothing on the ST serves `run`, `cd`, `load`,
   `exec` or `unload`. It reports in when GEM starts it at the end of
-  the boot. `[S]` writes it to the root of the GEMDRIVE folder, where
+  the boot. `[G]` writes it to the root of the GEMDRIVE folder, where
   GEM finds it when GEMDRIVE is `C:`; with another drive letter it
   has to be copied to the boot drive by hand.
 - `unsupported_in_tsr` — `runner res` in TSR mode: changing the
@@ -546,7 +548,7 @@ fall into three behavioural buckets:
   `exec` / `unload`. `run` / `cd` / `res` / `exec` are
   fire-and-forget (`202 Accepted`); `meminfo` / `load` / `unload`
   are synchronous. Every one of these gates on `409
-  runner_inactive` when `[U]` or `[S]` wasn't picked, and on `503 busy`
+  runner_inactive` when the Runner isn't running, and on `503 busy`
   (with `Retry-After: 1`) when another foreground command is
   already in flight. In TSR mode `DEVOPS.ACC` serves them instead of
   the poll loop; see *TSR mode* below.
@@ -554,8 +556,8 @@ fall into three behavioural buckets:
 - **VBL-ISR-driven commands** — `reset` plus the entire
   `/api/v1/runner/adv/*` surface. These ride the m68k's VBL
   ISR (`$70`, or `$400` if `ADV_HOOK_VECTOR = etv_timer` in the
-  setup menu). They return `409 runner_inactive` when `[U]` or `[S]`
-  wasn't picked, but **do not** gate on the busy lock —
+  setup menu). They return `409 runner_inactive` when the Runner isn't
+  running, but **do not** gate on the busy lock —
   escaping wedged state is their job. `adv jump` and `adv load`
   additionally require the VBL hook specifically (`409
   wrong_hook` otherwise); `reset` and `adv meminfo` work on
@@ -571,12 +573,14 @@ below the foreground endpoints.
 
 ### TSR mode
 
-`[S]` in the setup menu installs GEMDRIVE and the Advanced Runner hook,
-then lets the ST boot on through the AUTO folder to the GEM desktop
-instead of entering the poll loop. The foreground commands are served
-by the desk accessory `DEVOPS.ACC`, which GEM starts from `C:\` when
-GEMDRIVE is `C:`. `[S]` first writes the copy built into the firmware to
-the root of the GEMDRIVE folder, unless an identical one is there. The API is the same, with these differences:
+TSR mode is what the setup menu calls the GEMDRIVE Runner: `[G]` with
+`Ru[n]ner` on, which is the default (`[N]` toggles it). It installs
+GEMDRIVE and the Advanced Runner hook, then lets the ST boot on through
+the AUTO folder to the GEM desktop instead of entering the poll loop.
+The foreground commands are served by the desk accessory `DEVOPS.ACC`,
+which GEM starts from `C:\` when GEMDRIVE is `C:`. `[G]` first writes
+the copy built into the firmware to the root of the GEMDRIVE folder,
+unless an identical one is there. The API is the same, with these differences:
 
 - `run`, `cd`, `load`, `exec` and `unload` answer `409
   accessory_not_loaded` until the accessory has reported in.
@@ -635,7 +639,7 @@ curl http://sidecart.local/api/v1/runner
 }
 ```
 
-`tsr` is `true` when the user picked `[S]`; `accessory` is `true` once
+`tsr` is `true` when `[G]` started with the GEMDRIVE Runner on; `accessory` is `true` once
 `DEVOPS.ACC` has reported in since the ST last booted (always `false`
 outside TSR mode).
 
@@ -1159,7 +1163,7 @@ One cartridge cycle per byte. The 8-bit read result is undefined
 and MUST be discarded.
 
 The capture is gated on the firmware-mode flag — it goes live
-the moment the user picks `[U]`, `[G]` or `[S]` in the setup
+the moment the user picks `[U]` or `[G]` in the setup
 menu and the device commits to firmware mode. Pre-commit reads
 in the debug window are dropped at the RP filter so menu-mode
 activity never pollutes the diagnostic stream.
@@ -1189,7 +1193,7 @@ bytes; safe to poll at any cadence.
 
 | Field | Meaning |
 | --- | --- |
-| `firmware_mode` | `true` once `[U]`, `[G]` or `[S]` has committed; until then, debug emits are dropped at the RP filter. |
+| `firmware_mode` | `true` once `[U]` or `[G]` has committed; until then, debug emits are dropped at the RP filter. |
 | `ring_used` | Bytes currently in the producer's ring (capped at `ring_capacity`). |
 | `ring_capacity` | Ring size (8192 today). |
 | `bytes_dropped` | Producer-side drops. Always 0 in the current design (the producer overwrites; per-consumer drops are reported separately). |

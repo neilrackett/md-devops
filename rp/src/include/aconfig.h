@@ -30,6 +30,11 @@
 #define ACONFIG_PARAM_GEMDRIVE_RELOC_ADDR "GEMDRIVE_RELOC_ADDR"
 #define ACONFIG_PARAM_DEVOPS_MEMTOP "DEVOPS_MEMTOP"
 
+// GEMDRIVE Runner: with "true", [G] also keeps the Runner's interrupt hook
+// resident and installs DEVOPS.ACC, so the Runner's commands are served from
+// the GEM desktop. "false" is plain GEMDRIVE. Toggled with [N] in the menu.
+#define ACONFIG_PARAM_GEMDRIVE_RUNNER "GEMDRIVE_RUNNER"
+
 // Advanced Runner — Hook vector selector for the m68k
 // VBL / ETV handler. Valid values: "vbl" (install at $70, the VBL
 // autovector) or "etv_timer" (install at $400, TOS' MFP timer-C

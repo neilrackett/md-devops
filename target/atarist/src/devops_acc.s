@@ -2,8 +2,8 @@
 ; License: GPL v3
 ;
 ; Serves the Runner's foreground commands (run, load, exec, unload, cd)
-; while the ST sits at the GEM desktop, in TSR mode ([S] in the setup
-; menu). The cartridge installs GEMDRIVE and the Runner's interrupt hook
+; while the ST sits at the GEM desktop, in TSR mode ([G] in the setup
+; menu with the GEMDRIVE Runner on). The cartridge installs GEMDRIVE and the Runner's interrupt hook
 ; and lets TOS boot on through the AUTO folder; GEM then starts this
 ; accessory from the root of the boot drive. Every POLL_MS it reads the
 ; cartridge sentinel the RP writes commands to, and answers with the same

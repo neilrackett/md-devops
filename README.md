@@ -92,13 +92,12 @@ to the Pico W directly — Booster does that for you on demand.
 ## 🕹️ Usage — boot flow
 
 Power-on after install lands on the **Setup menu** for ~20
-seconds. From there you have five top-level commands:
+seconds. From there you have four top-level commands:
 
 | Key | Action |
 | --- | --- |
 | `[U]` | **Runner mode** (recommended). GEMDRIVE comes up, plus the Runner control surface for `runner run` / `load` / `exec` / etc. |
-| `[G]` | GEMDRIVE-only — ST drops straight into the emulated drive but does **not** activate the Runner. Use this if you only want file emulation and don't need the workstation to drive the ST. |
-| `[S]` | **TSR mode**. GEMDRIVE and the Runner's interrupt hook stay resident and the ST boots on through the AUTO folder to the GEM desktop, where the `DEVOPS.ACC` desk accessory serves `runner run` / `load` / `exec`. See [TSR mode](#tsr-mode--runner-commands-from-the-gem-desktop). |
+| `[G]` | **GEMDRIVE**. The ST boots on through the AUTO folder to the GEM desktop with the emulated drive. With the **GEMDRIVE Runner** on (`Ru[n]ner`, the default), the Runner comes too: its interrupt hook stays resident and the `DEVOPS.ACC` desk accessory serves `runner run` / `load` / `exec` from the desktop. See [GEMDRIVE Runner](#gemdrive-runner--runner-commands-from-the-gem-desktop). With it off, `[G]` is plain file emulation. |
 | `[X]` | Return to the Booster menu (e.g. to install another app). |
 | any key | Halt the auto-launch countdown so the menu stays up indefinitely while you read it. |
 
@@ -126,8 +125,8 @@ overlap` warning described below).
 
 GEMDRIVE emulates a drive from a folder on the microSD card, so without a
 working card there is nothing to emulate. The setup menu says so on the
-GEMDRIVE line — `SD: NO CARD` instead of `SD: mounted` — and `[G]`, `[U]` and
-`[S]` refuse to start, with *"Insert a working microSD card: GEMDRIVE needs one."*
+GEMDRIVE line — `SD: NO CARD` instead of `SD: mounted` — and `[G]` and `[U]`
+refuse to start, with *"Insert a working microSD card: GEMDRIVE needs one."*
 on the status line, rather than launching a mode with no drive behind it.
 
 The auto-launch countdown is refused the same way, so a device powered on
@@ -193,6 +192,7 @@ GEMDRIVE                                   💾
   [D]rive     : C:
   [R]eloc addr: auto (screen-16KB)
   Mem[t]op    : auto (matches reloc)
+  Ru[n]ner    : on
   Phystop     : 0x100000
   Screenmem   : 0x078000
 
@@ -206,19 +206,19 @@ API Endpoint                               📶
 USB CDC (Debug serial)                     💡
   Status      : connected
 
-[G]EMDRIVE r[U]nner T[S]R [X] Booster
+[G]EMDRIVE  r[U]nner  [X] Booster
 Select an option: ▌
 [████████░░░░░░░░░░] Booting in 12 s — any key halts
 ```
 
 | Section | What it shows | Keys |
 | --- | --- | --- |
-| **GEMDRIVE** | Which microSD folder is mounted as the emulated drive, the drive letter assigned to it, the GEMDRIVE relocation address (`auto` = `screen_base − 16 KB`), the patched `_memtop` value, the read-only `_phystop` value (`$42E`) the ST reports, and the read-only screen-memory base (`_v_bas_ad`, `$44E`). A `(!)` marker on the Phystop line means TOS' phystop disagrees with the silicon's MMU bank-config — a reset-resistant program lowered phystop and survived warm reset; **only a power-cycle restores it**. The hard-drive icon appears whenever the section is live. | `[o]` change folder, `[d]` change drive letter, `[r]` change reloc addr, `[t]` change `_memtop`. (Phystop and Screenmem are read-only.) |
+| **GEMDRIVE** | Which microSD folder is mounted as the emulated drive, the drive letter assigned to it, the GEMDRIVE relocation address (`auto` = `screen_base − 16 KB`), the patched `_memtop` value, whether `[G]` brings the GEMDRIVE Runner, the read-only `_phystop` value (`$42E`) the ST reports, and the read-only screen-memory base (`_v_bas_ad`, `$44E`). A `(!)` marker on the Phystop line means TOS' phystop disagrees with the silicon's MMU bank-config — a reset-resistant program lowered phystop and survived warm reset; **only a power-cycle restores it**. The hard-drive icon appears whenever the section is live. | `[o]` change folder, `[d]` change drive letter, `[r]` change reloc addr, `[t]` change `_memtop`, `[n]` turn the GEMDRIVE Runner on or off. (Phystop and Screenmem are read-only.) |
 | **Adv [V]ector** | Which interrupt vector the Advanced Runner installs its hook into — `vbl ($70)` or `etv_timer ($400)`. See *Picking a hook vector* below for the trade-off. The cog icon appears whenever the section is live. | `[V]` toggle between `vbl` / `etv_timer`. |
 | **API Endpoint** | mDNS hostname and the IP DHCP leased. The Wi-Fi icon appears once the network is up; if there's no IP yet (Wi-Fi still associating) the icon is hidden. | (read-only) |
 | **USB CDC (Debug serial)** | `connected` / `disconnected` — live-refreshed as you plug or unplug a USB cable into the Pico. The lightbulb icon flips in lock-step. | (read-only) |
-| **Bottom navigation strip** | Top-level command keys + a one-character prompt area for typing them. | `[G]` / `[U]` / `[S]` / `[X]`. |
-| **Animated countdown bar** | Shrinking white bar; the message "Booting in N s — any key halts" is overlaid in inverted colour so it stays readable both halves. Becomes "Countdown stopped. Press [G], [U], [S] or [X] to continue." once any key has been pressed. | (passive — but pressing any key halts the countdown) |
+| **Bottom navigation strip** | Top-level command keys + a one-character prompt area for typing them. | `[G]` / `[U]` / `[X]`. |
+| **Animated countdown bar** | Shrinking white bar; the message "Booting in N s — any key halts" is overlaid in inverted colour so it stays readable both halves. Becomes "Countdown stopped. Press [G], [U] or [X] to continue." once any key has been pressed. | (passive — but pressing any key halts the countdown) |
 
 ### Picking a hook vector
 
@@ -646,7 +646,9 @@ Runner mode is the foreground execution path the firmware ships
 with. The user picks `[U]` at the setup menu to launch it; the
 m68k Runner stays in a poll loop waiting for commands from the
 RP, while GEMDRIVE keeps servicing TOS file I/O so launched
-programs can use the emulated drive normally.
+programs can use the emulated drive normally. The same commands
+work from the GEM desktop when `[G]` starts with the GEMDRIVE Runner
+on; see [GEMDRIVE Runner](#gemdrive-runner--runner-commands-from-the-gem-desktop).
 
 The Runner exposes its own subset of the HTTP API
 (`/api/v1/runner/*`) and CLI (`sidecart runner …`) for
@@ -664,9 +666,10 @@ The surface splits into three behavioural buckets:
   report `active : no`.
 - **Foreground commands** — `runner cd` / `res` / `meminfo` /
   `run` / `load` / `exec` / `unload`. These speak to the m68k
-  Runner poll loop. They return `409 runner_inactive` if `[U]`
-  wasn't picked, and `503 busy` if another foreground command
-  is already in flight. Cannot reach a wedged ST.
+  Runner poll loop, or with the GEMDRIVE Runner to `DEVOPS.ACC`.
+  They return `409 runner_inactive` if the Runner isn't running,
+  and `503 busy` if another foreground command is already in
+  flight. Cannot reach a wedged ST.
 - **VBL-driven commands** — `runner reset` plus the entire
   `runner adv` family (`jump` / `load` / `meminfo`). These
   ride the m68k's VBL ISR (`$70`, or `$400` if you switched
@@ -695,7 +698,7 @@ loaded   : basepage 0x00078000
 ```
 
 If Runner mode hasn't been entered yet, prints
-`Runner mode is not active. Boot via [U] or [S] to enable.` and exits
+`Runner is not active. Boot via [U], or [G] with the GEMDRIVE Runner on.` and exits
 0. `--json` returns the full envelope (`last_command` /
 `last_path` / `last_exit_code` / `last_cd_errno` /
 `last_res_errno` / `loaded_basepage` / `last_load_errno`).
@@ -921,7 +924,7 @@ Synchronous — the workstation file is chunked through
 when `LOCAL` has a header you don't want landing on the ST.
 Same shell-quoting rule as `adv jump`.
 
-### TSR mode — Runner commands from the GEM desktop
+### GEMDRIVE Runner — Runner commands from the GEM desktop
 
 > Tested on a Mega STE with TOS 2.06, with and without an ACSI2STM
 > hard disk, and in Hatari with EmuTOS. Other machines and TOS
@@ -930,12 +933,18 @@ Same shell-quoting rule as `adv jump`.
 `[U]` runs the Runner from the cartridge's boot hook, before the
 AUTO folder, the desk accessories and GEM have loaded, so a program
 it launches finds none of them — no driver from the AUTO folder (an
-Xpad provider, say), and on TOS 1.0x no cookie jar. `[S]` installs
-GEMDRIVE and the Runner's interrupt hook, then lets the ST boot on
-to the desktop as usual. The foreground commands are served from
-there by a desk accessory, `DEVOPS.ACC`.
+Xpad provider, say), and on TOS 1.0x no cookie jar. `[G]` with the
+GEMDRIVE Runner on installs GEMDRIVE and the Runner's interrupt hook,
+then lets the ST boot on to the desktop as usual. The foreground
+commands are served from there by a desk accessory, `DEVOPS.ACC`.
+The code and the API call this TSR mode.
 
-Press `[S]` at the setup menu. The firmware carries the accessory
+The GEMDRIVE Runner is on unless you turn it off: `Ru[n]ner` in the
+GEMDRIVE section of the setup menu shows it, and `[N]` toggles it.
+With it off, `[G]` is plain GEMDRIVE: no accessory, no interrupt
+hook, no Runner.
+
+Press `[G]` at the setup menu. The firmware carries the accessory
 it was built with and writes it to the root of the GEMDRIVE folder
 first, unless an identical copy is already there, so it always
 matches the firmware. Once GEM has started it, `runner status` shows
@@ -943,7 +952,7 @@ it:
 
 ```
 active   : true
-mode     : TSR (DEVOPS.ACC loaded)
+mode     : GEMDRIVE Runner (DEVOPS.ACC loaded)
 ```
 
 On the ST, the accessory adds **DevOps Runner** to the Desk menu. It
@@ -952,10 +961,10 @@ command the accessory ran, with its exit code or result. Commands wait
 while the alert is open.
 
 With GEMDRIVE as `C:`, GEM starts the accessory from `C:\`, whether
-or not there is another hard disk. With another drive letter, `[S]`
+or not there is another hard disk. With another drive letter, `[G]`
 still writes `DEVOPS.ACC` to the root of the GEMDRIVE folder: copy it
-from there to the root of your boot drive. Until you do, `[S]` gives
-you `[G]` plus `runner reset`, `runner meminfo` and the `runner adv`
+from there to the root of your boot drive. Until you do, you get plain
+GEMDRIVE plus `runner reset`, `runner meminfo` and the `runner adv`
 commands.
 
 TOS runs the AUTO folder from the boot drive. With GEMDRIVE as `C:`
@@ -965,11 +974,11 @@ loads after the cartridge can take the boot drive for its own first
 drive: with an ACSI2STM, which moves itself to `D:`, TOS runs
 `D:\AUTO` instead, so AUTO programs go there.
 
-| Command | In TSR mode |
+| Command | With the GEMDRIVE Runner |
 | --- | --- |
 | `runner run` / `load` / `exec` / `unload` / `cd` | Served by `DEVOPS.ACC`. `409 accessory_not_loaded` until it has started. |
 | `runner meminfo` | Answered by the interrupt hook, as `runner adv meminfo` is. |
-| `runner reset`, `runner adv …` | Unchanged. After a reset the ST boots back into TSR mode; wait for `DEVOPS.ACC loaded` again before the next foreground command. |
+| `runner reset`, `runner adv …` | Unchanged. After a reset the ST boots back into GEMDRIVE with the Runner; wait for `DEVOPS.ACC loaded` again before the next foreground command. |
 | `runner res` | `409 unsupported_in_tsr` — changing the resolution under GEM would leave the desktop drawn for the old one. |
 
 To launch a program the accessory does what the desktop does for a
@@ -1105,7 +1114,7 @@ usbcdc_dropped : 0
 ```
 
 `firmware_mode` flips to `yes` once the user has committed a
-mode at the menu (`[U]`, `[G]` or `[S]`) — the capture is
+mode at the menu (`[U]` or `[G]`) — the capture is
 gated on this so menu activity never pollutes the stream.
 `ring used / capacity` is the snapshot fill of the in-RAM
 debug ring at the moment of the request. `bytes_dropped` and
@@ -1218,7 +1227,8 @@ into three sections:
 sentinel and hands control to the right blob: `CMD_START = 4`
 jumps into `GEMDRIVE_BLOB+4` (diagnostic + memtop verify), and
 `CMD_START_RUNNER = 5` jumps into `RUNNER_BLOB` (the Runner's
-poll loop). `CMD_START_TSR = 6` calls `RUNNER_BLOB` with the
+poll loop). `CMD_START_TSR = 6`, which `[G]` sends when the GEMDRIVE
+Runner is on, calls `RUNNER_BLOB` with the
 command still in `d6`, so the Runner installs its interrupt hook
 and returns, then goes through `GEMDRIVE_BLOB+4` back to TOS, which
 boots on. Adding a new module follows the same pattern: place
@@ -1236,7 +1246,7 @@ outside-module symbols (except the entry-point `jmp` from
 guardrails.
 
 `devops_acc.s` is not part of the cartridge image: it builds
-`DEVOPS.ACC`, the TSR-mode desk accessory, an ordinary TOS
+`DEVOPS.ACC`, the GEMDRIVE Runner's desk accessory, an ordinary TOS
 executable that GEM loads and relocates. It shares the protocol
 includes and the Runner's command codes.
 

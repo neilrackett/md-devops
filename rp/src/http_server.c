@@ -1571,8 +1571,8 @@ static bool runner_require_accessory(http_conn_t *c) {
     return true;
   }
   write_error(c, 409, "Conflict", "accessory_not_loaded",
-              "TSR mode: DEVOPS.ACC has not reported in yet; GEM starts it "
-              "once the ST reaches the desktop");
+              "GEMDRIVE Runner: DEVOPS.ACC has not reported in yet; GEM "
+              "starts it once the ST reaches the desktop");
   return false;
 }
 
@@ -1599,7 +1599,8 @@ static void runner_withdraw_command(uint32_t command) {
 static void handle_runner_run(http_conn_t *c) {
   if (!emul_isRunnerActive()) {
     write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner mode is not active; boot via [U] or [S] first");
+                "Runner is not active; boot via [U], or [G] with the "
+                "GEMDRIVE Runner on");
     return;
   }
   if (!runner_require_accessory(c)) return;
@@ -1739,7 +1740,8 @@ static void handle_runner_run(http_conn_t *c) {
 static void handle_runner_load(http_conn_t *c) {
   if (!emul_isRunnerActive()) {
     write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner mode is not active; boot via [U] or [S] first");
+                "Runner is not active; boot via [U], or [G] with the "
+                "GEMDRIVE Runner on");
     return;
   }
   if (!runner_require_accessory(c)) return;
@@ -1904,7 +1906,8 @@ static void handle_runner_load(http_conn_t *c) {
 static void handle_runner_exec(http_conn_t *c) {
   if (!emul_isRunnerActive()) {
     write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner mode is not active; boot via [U] or [S] first");
+                "Runner is not active; boot via [U], or [G] with the "
+                "GEMDRIVE Runner on");
     return;
   }
   if (!runner_require_accessory(c)) return;
@@ -1955,7 +1958,8 @@ static void handle_runner_exec(http_conn_t *c) {
 static void handle_runner_unload(http_conn_t *c) {
   if (!emul_isRunnerActive()) {
     write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner mode is not active; boot via [U] or [S] first");
+                "Runner is not active; boot via [U], or [G] with the "
+                "GEMDRIVE Runner on");
     return;
   }
   if (!runner_require_accessory(c)) return;
@@ -2027,7 +2031,8 @@ static void handle_runner_unload(http_conn_t *c) {
 static void handle_runner_cd(http_conn_t *c) {
   if (!emul_isRunnerActive()) {
     write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner mode is not active; boot via [U] or [S] first");
+                "Runner is not active; boot via [U], or [G] with the "
+                "GEMDRIVE Runner on");
     return;
   }
   if (!runner_require_accessory(c)) return;
@@ -2170,12 +2175,14 @@ static void runner_write_rez(uint16_t rez) {
 static void handle_runner_res(http_conn_t *c) {
   if (!emul_isRunnerActive()) {
     write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner mode is not active; boot via [U] or [S] first");
+                "Runner is not active; boot via [U], or [G] with the "
+                "GEMDRIVE Runner on");
     return;
   }
   if (emul_isRunnerTsrMode()) {
     write_error(c, 409, "Conflict", "unsupported_in_tsr",
-                "TSR mode: changing resolution under GEM is not supported");
+                "GEMDRIVE Runner: changing resolution under GEM is not "
+                "supported");
     return;
   }
   if (emul_isRunnerBusy()) {
@@ -2263,7 +2270,8 @@ static void handle_runner_res(http_conn_t *c) {
 static void handle_runner_adv_jump(http_conn_t *c) {
   if (!emul_isRunnerActive()) {
     write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner mode is not active; boot via [U] or [S] first");
+                "Runner is not active; boot via [U], or [G] with the "
+                "GEMDRIVE Runner on");
     return;
   }
   if (emul_getRunnerAdvHookVector() != RUNNER_HOOK_VECTOR_VBL) {
@@ -2469,7 +2477,8 @@ static bool handle_runner_adv_load_init(http_conn_t *c, struct pbuf *seg,
                                         size_t body_off, size_t leftover) {
   if (!emul_isRunnerActive()) {
     write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner mode is not active; boot via [U] or [S] first");
+                "Runner is not active; boot via [U], or [G] with the "
+                "GEMDRIVE Runner on");
     return false;
   }
   if (emul_getRunnerAdvHookVector() != RUNNER_HOOK_VECTOR_VBL) {
@@ -2606,7 +2615,8 @@ static bool handle_runner_adv_load_init(http_conn_t *c, struct pbuf *seg,
 static void handle_runner_adv_meminfo(http_conn_t *c) {
   if (!emul_isRunnerActive()) {
     write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner mode is not active; boot via [U] or [S] first");
+                "Runner is not active; boot via [U], or [G] with the "
+                "GEMDRIVE Runner on");
     return;
   }
 
@@ -2823,7 +2833,8 @@ static void handle_debug_log(http_conn_t *c) {
 static void handle_runner_meminfo(http_conn_t *c) {
   if (!emul_isRunnerActive()) {
     write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner mode is not active; boot via [U] or [S] first");
+                "Runner is not active; boot via [U], or [G] with the "
+                "GEMDRIVE Runner on");
     return;
   }
   if (emul_isRunnerBusy()) {
@@ -2894,7 +2905,8 @@ static void handle_runner_meminfo(http_conn_t *c) {
 static void handle_runner_reset(http_conn_t *c) {
   if (!emul_isRunnerActive()) {
     write_error(c, 409, "Conflict", "runner_inactive",
-                "Runner mode is not active; boot via [U] or [S] first");
+                "Runner is not active; boot via [U], or [G] with the "
+                "GEMDRIVE Runner on");
     return;
   }
   uint32_t now_ms = (uint32_t)to_ms_since_boot(get_absolute_time());

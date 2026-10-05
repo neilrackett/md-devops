@@ -13,6 +13,7 @@ static SettingsConfigEntry defaultEntries[] = {
     {ACONFIG_PARAM_GEMDRIVE_DRIVE, SETTINGS_TYPE_STRING, "C"},
     {ACONFIG_PARAM_GEMDRIVE_RELOC_ADDR, SETTINGS_TYPE_INT, "0"},
     {ACONFIG_PARAM_DEVOPS_MEMTOP, SETTINGS_TYPE_INT, "0"},
+    {ACONFIG_PARAM_GEMDRIVE_RUNNER, SETTINGS_TYPE_BOOL, "true"},
     // Advanced Runner — default "vbl" ($70 hardware VBL exception
     // vector). The full feature set (adv jump / adv load) only
     // works on this vector because we need a stable trap-frame

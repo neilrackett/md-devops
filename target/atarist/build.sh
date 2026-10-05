@@ -110,7 +110,7 @@ rm $target_firmware
 echo "Removed $target_firmware"
 
 # The TSR-mode desk accessory, embedded so the RP can write it to the
-# GEMDRIVE folder when the user picks [S]. Byte for byte: a TOS executable
+# GEMDRIVE folder when [G] starts with the GEMDRIVE Runner on. Byte for byte: a TOS executable
 # ends with a zero that the word-array conversion above would trim.
 acc_header="devops_acc.h"
 rm -f "$acc_header"

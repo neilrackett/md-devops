@@ -410,7 +410,8 @@ runner_function:
     jsr gemdrive_install
     jmp RUNNER_BLOB
 
-; Dispatcher invoked on CMD_START_TSR — the user pressed [S]. Installs
+; Dispatcher invoked on CMD_START_TSR — the user pressed [G] with the
+; GEMDRIVE Runner on. Installs
 ; GEMDRIVE and the Runner's interrupt hook, then lets TOS boot on through
 ; the AUTO folder to the desktop, where DEVOPS.ACC serves the foreground
 ; Runner commands. runner_entry tells this from [U] by d6, which still

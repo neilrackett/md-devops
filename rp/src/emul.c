@@ -67,7 +67,7 @@ static void cmdGemdriveRelocAddr(const char *arg);
 static void cmdGemdriveMemtop(const char *arg);
 static void cmdAdvHookVector(const char *arg);
 static void cmdRunner(const char *arg);
-static void cmdTsr(const char *arg);
+static void cmdGemdriveRunner(const char *arg);
 static void clearLaunchBlock(void);
 
 // Command table. Every key here corresponds to a label on the on-screen
@@ -83,7 +83,7 @@ static const Command commands[] = {
     {"t", cmdGemdriveMemtop},
     {"v", cmdAdvHookVector},
     {"u", cmdRunner},
-    {"s", cmdTsr},
+    {"n", cmdGemdriveRunner},
 };
 
 // Number of commands in the table
@@ -100,14 +100,14 @@ static bool menuScreenActive = false;
 // menu() (initial paint) and the main loop (live refresh) touch
 // it. Fixed cursor row so the overdraw doesn't have to walk the
 // terminal state.
-#define MENU_USBCDC_ROW 17
+#define MENU_USBCDC_ROW 18
 // Phystop and Screenmem value rows (inside the GEMDRIVE block,
-// under Mem[t]op). menu() always paints placeholders at these rows
-// so the layout below stays fixed even before the m68k HELLO has
-// landed; refreshPhystopLine() / refreshScreenmemLine() overdraw
+// under Mem[t]op and Ru[n]ner). menu() always paints placeholders at
+// these rows so the layout below stays fixed even before the m68k HELLO
+// has landed; refreshPhystopLine() / refreshScreenmemLine() overdraw
 // once HELLO arrives.
-#define MENU_PHYSTOP_ROW   7
-#define MENU_SCREENMEM_ROW 8
+#define MENU_PHYSTOP_ROW   8
+#define MENU_SCREENMEM_ROW 9
 
 // Forward decls — both refresh helpers are defined further down
 // (next to refreshUsbCdcLine), but emul_onGemdriveHello (above the
@@ -131,8 +131,9 @@ static int g_menuLastUsbCdcAttached = -1;
 // what makes edit-build-run iteration bearable. The scheduled
 // relaunch is driven from the main loop via runnerRelaunchAtMs.
 static bool runnerActive = false;
-// TSR mode ([S]): Runner active, foreground commands served by
-// DEVOPS.ACC once GEM has started it.
+// The GEMDRIVE Runner ([G] with Ru[n]ner on): Runner active, foreground
+// commands served by DEVOPS.ACC once GEM has started it. Called TSR mode in
+// the code and the API.
 static bool runnerTsrMode = false;
 static bool runnerAccessoryAttached = false;
 static bool runnerBusy = false;
@@ -181,11 +182,19 @@ static uint8_t runnerAdvHookVector = RUNNER_HOOK_VECTOR_UNKNOWN;
 static bool runnerAdvLoadAcked = false;
 
 bool emul_isRunnerActive(void) { return runnerActive; }
+
+// On unless set off: a settings sector written before the setting existed
+// has no entry for it.
+static bool gemdriveRunnerEnabled(void) {
+  SettingsConfigEntry *entry =
+      settings_find_entry(aconfig_getContext(), ACONFIG_PARAM_GEMDRIVE_RUNNER);
+  return entry == NULL || strcmp(entry->value, "false") != 0;
+}
 bool emul_isRunnerTsrMode(void) { return runnerTsrMode; }
 bool emul_isRunnerAccessoryAttached(void) { return runnerAccessoryAttached; }
 void emul_recordRunnerAccessoryAttached(void) {
-  // GEM starts the accessory in [G] mode too, where nothing resets this
-  // on the next boot; it only means something in TSR mode.
+  // GEM starts the accessory with the GEMDRIVE Runner off too, where
+  // nothing resets this on the next boot; it only means something on.
   if (runnerTsrMode) runnerAccessoryAttached = true;
 }
 bool emul_isRunnerBusy(void) { return runnerBusy; }
@@ -677,7 +686,7 @@ static void drawHaltedInfoLine(void) {
           ? "Insert a working microSD card: GEMDRIVE needs one."
       : launchNeedsStReset
           ? "Reset the Atari ST first: no HELLO since RP boot."
-          : "Countdown stopped. Press [G], [U], [S] or [X] to continue.");
+          : "Countdown stopped. Press [G], [U] or [X] to continue.");
 }
 
 // Save the app settings and report a failure on the menu. The countdown stops
@@ -862,19 +871,19 @@ static uint32_t emul_devhooksApp(uint16_t commandId, const uint16_t *payload,
 // Thin horizontal dividers between the menu's config groups.
 // Drawn in the gap row above each section header so they don't
 // overlap any character cell. One pixel tall, full-width edge-
-// to-edge. Positions shifted +16 px from the original layout
-// because two new GEMDRIVE rows (Phystop + Screenmem) bump every
-// section below them down by two rows (16 px).
+// to-edge. Positions shifted +24 px from the original layout
+// because three GEMDRIVE rows (Ru[n]ner, Phystop, Screenmem) bump
+// every section below them down by three rows (24 px).
 static void drawMenuDividers(void) {
   u8g2_t *ref = display_getU8g2Ref();
   u8g2_SetDrawColor(ref, 1);
-  // Above Adv [V]ector (between row 8 GEMDRIVE last and row 10
+  // Above Adv [V]ector (between row 9 GEMDRIVE last and row 11
   // Adv header).
-  u8g2_DrawHLine(ref, 0, 76, DISPLAY_WIDTH);
-  // Above API Endpoint (between row 11 and row 13).
-  u8g2_DrawHLine(ref, 0, 100, DISPLAY_WIDTH);
-  // Above USB CDC (between row 15 and row 17).
-  u8g2_DrawHLine(ref, 0, 132, DISPLAY_WIDTH);
+  u8g2_DrawHLine(ref, 0, 84, DISPLAY_WIDTH);
+  // Above API Endpoint (between row 12 and row 14).
+  u8g2_DrawHLine(ref, 0, 108, DISPLAY_WIDTH);
+  // Above USB CDC (between row 16 and row 18).
+  u8g2_DrawHLine(ref, 0, 140, DISPLAY_WIDTH);
 }
 
 // status icons via u8g2_font_open_iconic_embedded_1x_t.
@@ -896,9 +905,9 @@ static void drawMenuDividers(void) {
 // glyph baseline is at y_top + 7 (font is 8 px tall).
 #define MENU_ICON_X              (DISPLAY_WIDTH - 12)
 #define MENU_ICON_GEMDRIVE_YTOP  16   // term row 2
-#define MENU_ICON_ADV_YTOP       80   // term row 10 (Phystop + Screenmem add 2 rows)
-#define MENU_ICON_API_YTOP       104  // term row 13
-#define MENU_ICON_USB_YTOP       136  // term row 17
+#define MENU_ICON_ADV_YTOP       88   // term row 11 (Ru[n]ner, Phystop, Screenmem add 3 rows)
+#define MENU_ICON_API_YTOP       112  // term row 14
+#define MENU_ICON_USB_YTOP       144  // term row 18
 #define MENU_ICON_GLYPH_COG          0x42
 #define MENU_ICON_GLYPH_LIGHTBULB    0x4D
 #define MENU_ICON_GLYPH_HARD_DRIVE   0x4C
@@ -914,7 +923,7 @@ static void drawIconCell(uint16_t x, uint16_t y_top, uint8_t glyph,
   // box would leave that row untouched and a hide→show
   // transition would expose a residual top edge of the prior
   // glyph. The four icon positions in this menu all have an
-  // unused pixel row directly above (the hrules at y=76/100/132
+  // unused pixel row directly above (the hrules at y=84/108/140
   // sit further up still), so the +1 row of erase margin is
   // safe.
   u8g2_SetDrawColor(ref, 0);
@@ -1405,6 +1414,10 @@ static void menu(void) {
   }
   term_printString(memtopLine);
 
+  // The GEMDRIVE Runner: what [G] launches. Toggled with [N].
+  term_printString(gemdriveRunnerEnabled() ? "\n  Ru[n]ner    : on"
+                                           : "\n  Ru[n]ner    : off");
+
   // Phystop row — read-only display of TOS' _phystop ($42E) value in
   // hex, with a `(!)` marker when it disagrees with the silicon's MMU
   // bank-config reading. The marker means a reset-resistant program
@@ -1517,7 +1530,7 @@ static void menu(void) {
   term_printString(usbAttached ? "connected   " : "disconnected");
 
   vt52Cursor(TERM_SCREEN_SIZE_Y - 2, 0);
-  term_printString("[G]EMDRIVE r[U]nner T[S]R [X] Booster");
+  term_printString("[G]EMDRIVE  r[U]nner  [X] Booster");
 
   vt52Cursor(TERM_SCREEN_SIZE_Y - 1, 0);
   term_printString("Select an option: ");
@@ -1547,8 +1560,8 @@ static void showCounter(int cdown) {
 
 // --- Command handlers (single-key dispatch) ----------------------------
 
-// [G]EMDRIVE — drops straight into GEMDRIVE-only on the Atari ST
-// without activating the Runner control surface.
+// [G]EMDRIVE — GEMDRIVE on the Atari ST. With the GEMDRIVE Runner on
+// ([N]), also the Runner, served from the GEM desktop by DEVOPS.ACC.
 // [G] and [U] make the m68k install GEMDRIVE at the address the RP computed
 // from the ST's HELLO, which the ST sends only at cold boot. After the RP
 // reboots while the ST keeps running (a crash, SELECT, a flash) no HELLO
@@ -1587,6 +1600,21 @@ void cmdGemdrive(const char *arg) {
   showTitle();
   term_printString("\n\n");
   term_printString("Launching DevOps on the Atari ST...\n");
+  if (gemdriveRunnerEnabled()) {
+    // The GEMDRIVE Runner: the Runner's interrupt hook stays resident too,
+    // the ST boots on through the AUTO folder to the desktop, and
+    // DEVOPS.ACC serves the foreground commands from there. Written before
+    // the ST boots GEM, which loads accessories once, at startup.
+    if (!runner_installAccessory()) {
+      term_printString("Could not write " RUNNER_ACC_NAME
+                       " to the GEMDRIVE folder.\n");
+    }
+    runnerActive = true;
+    runnerTsrMode = true;
+    emul_enterFirmwareMode();
+    SEND_COMMAND_TO_DISPLAY(DISPLAY_COMMAND_START_TSR);
+    return;
+  }
   // commit firmware mode (debug-byte filter starts
   // accepting captures from this point on).
   emul_enterFirmwareMode();
@@ -1614,28 +1642,6 @@ void cmdRunner(const char *arg) {
   // capture filter for the rest of the session).
   emul_enterFirmwareMode();
   SEND_COMMAND_TO_DISPLAY(DISPLAY_COMMAND_START_RUNNER);
-}
-
-// [S] launches TSR mode: GEMDRIVE and the Runner's interrupt hook stay
-// resident and the ST boots on through the AUTO folder to the desktop,
-// where DEVOPS.ACC serves the foreground Runner commands.
-void cmdTsr(const char *arg) {
-  (void)arg;
-  if (!emul_canLaunch()) return;
-  haltCountdown = true;
-  menuScreenActive = false;
-  showTitle();
-  term_printString("\n\n");
-  term_printString("Launching DevOps TSR mode on the Atari ST...\n");
-  // Before the ST boots GEM, which loads accessories once, at startup.
-  if (!runner_installAccessory()) {
-    term_printString("Could not write " RUNNER_ACC_NAME
-                     " to the GEMDRIVE folder.\n");
-  }
-  runnerActive = true;
-  runnerTsrMode = true;
-  emul_enterFirmwareMode();
-  SEND_COMMAND_TO_DISPLAY(DISPLAY_COMMAND_START_TSR);
 }
 
 void cmdBooster(const char *arg) {
@@ -1840,6 +1846,17 @@ void cmdAdvHookVector(const char *arg) {
       (strcmp(current, "etv_timer") == 0) ? "vbl" : "etv_timer";
   settings_put_string(aconfig_getContext(), ACONFIG_PARAM_ADV_HOOK_VECTOR,
                       next);
+  (void)saveAppSettings();
+  menu();
+}
+
+// [N] turns the GEMDRIVE Runner on or off: whether [G] also serves the
+// Runner's commands from the desktop, through DEVOPS.ACC.
+void cmdGemdriveRunner(const char *arg) {
+  (void)arg;
+  haltCountdown = true;
+  settings_put_bool(aconfig_getContext(), ACONFIG_PARAM_GEMDRIVE_RUNNER,
+                    !gemdriveRunnerEnabled());
   (void)saveAppSettings();
   menu();
 }
