@@ -101,6 +101,11 @@ static bool menuScreenActive = false;
 // it. Fixed cursor row so the overdraw doesn't have to walk the
 // terminal state.
 #define MENU_USBCDC_ROW 18
+// The other section headers. The dividers and status icons are placed from
+// these rows, so a new menu row only moves the numbers below it, here.
+#define MENU_GEMDRIVE_ROW 2
+#define MENU_ADV_ROW 11
+#define MENU_API_ROW 14
 // Phystop and Screenmem value rows (inside the GEMDRIVE block,
 // under Mem[t]op and Ru[n]ner). menu() always paints placeholders at
 // these rows so the layout below stays fixed even before the m68k HELLO
@@ -183,12 +188,12 @@ static bool runnerAdvLoadAcked = false;
 
 bool emul_isRunnerActive(void) { return runnerActive; }
 
-// On unless set off: a settings sector written before the setting existed
-// has no entry for it.
+// Defaults to on (aconfig.c); settings_init loads the defaults before what is
+// stored, so a sector saved before the setting existed still has it.
 static bool gemdriveRunnerEnabled(void) {
   SettingsConfigEntry *entry =
       settings_find_entry(aconfig_getContext(), ACONFIG_PARAM_GEMDRIVE_RUNNER);
-  return entry == NULL || strcmp(entry->value, "false") != 0;
+  return entry != NULL && strcmp(entry->value, "true") == 0;
 }
 bool emul_isRunnerTsrMode(void) { return runnerTsrMode; }
 bool emul_isRunnerAccessoryAttached(void) { return runnerAccessoryAttached; }
@@ -215,6 +220,19 @@ bool emul_getRunnerLastExitCode(int32_t *out) {
 uint32_t emul_getRunnerLastStartedMs(void) { return runnerLastStartedMs; }
 uint32_t emul_getRunnerLastFinishedMs(void) { return runnerLastFinishedMs; }
 
+// What the RP knows about the ST's session, forgotten whenever the ST goes
+// down: the program that was running never sends DONE, so the busy lock
+// would never clear; the cold reset puts TOS' cwd back at the root; and the
+// accessory goes down with GEM.
+static void forgetStSession(void) {
+  runnerBusy = false;
+  runnerCwd[0] = '\0';
+  runnerCwdPrev[0] = '\0';
+  runnerLastHasCdErrno = false;
+  runnerLastCdErrno = 0;
+  runnerAccessoryAttached = false;
+}
+
 void emul_recordRunnerCommand(runner_last_command_t cmd, uint32_t now_ms) {
   runnerLastCommand = cmd;
   runnerLastStartedMs = now_ms;
@@ -223,21 +241,10 @@ void emul_recordRunnerCommand(runner_last_command_t cmd, uint32_t now_ms) {
   runnerLastExitCode = 0;
   runnerLastPath[0] = '\0';
   if (cmd == RUNNER_LAST_RESET) {
-    // The cold reset wipes the m68k TOS process cwd back to root —
-    // clear our mirror so subsequent relative commands resolve from
-    // the same baseline. Also forcibly clear the busy lock: the
-    // program that was running owned the cartridge bus and never got
-    // to send DONE; without this, status keeps reporting busy=true
-    // forever and POST /run / /cd return 503.
-    runnerBusy = false;
-    runnerCwd[0] = '\0';
-    runnerCwdPrev[0] = '\0';
-    runnerLastHasCdErrno = false;
-    runnerLastCdErrno = 0;
-    // The accessory goes down with the ST. Left set until the Runner's
-    // HELLO, several seconds into the boot, it let a foreground command
-    // through to an ST that was still rebooting, and the command was lost.
-    runnerAccessoryAttached = false;
+    // Now, not at the Runner's HELLO several seconds into the boot: until
+    // then a foreground command got through to an ST that was still
+    // rebooting, and was lost.
+    forgetStSession();
   }
 }
 
@@ -464,11 +471,7 @@ bool emul_getRunnerMeminfo(runner_meminfo_t *out) {
 }
 
 void emul_resetRunnerSession(void) {
-  runnerBusy = false;
-  runnerCwd[0] = '\0';
-  runnerCwdPrev[0] = '\0';
-  runnerLastHasCdErrno = false;
-  runnerLastCdErrno = 0;
+  forgetStSession();
   runnerLastHasResErrno = false;
   runnerLastResErrno = 0;
   // The session resets on the Runner's HELLO, which means the ST has cold
@@ -484,9 +487,6 @@ void emul_resetRunnerSession(void) {
   runnerMeminfoHasSnapshot = false;
   runnerAdvancedInstalled = false;
   runnerAdvHookVector = RUNNER_HOOK_VECTOR_UNKNOWN;
-  // The cartridge's HELLO comes first on every boot; the accessory
-  // reports in again once GEM starts it.
-  runnerAccessoryAttached = false;
 }
 
 bool emul_isRunnerAdvancedInstalled(void) {
@@ -527,17 +527,9 @@ void emul_onGemdriveHello(void) {
   // 200 ms slack lets the m68k finish gemdrive_init + relocate +
   // reach the print loop before the first sentinel write lands.
   runnerRelaunchAtMs = now_ms + 200;
-  // Also clear stuck busy/cwd here — physical reset never went
-  // through handle_runner_reset, so emul_recordRunnerCommand never
-  // ran and runnerBusy may still be true from the program that was
-  // running when the user hit reset.
-  runnerBusy = false;
-  runnerCwd[0] = '\0';
-  runnerCwdPrev[0] = '\0';
-  runnerLastHasCdErrno = false;
-  runnerLastCdErrno = 0;
-  // Likewise the accessory: a physical reset is first seen here.
-  runnerAccessoryAttached = false;
+  // A physical reset never went through handle_runner_reset, so this is
+  // the first the RP hears of it.
+  forgetStSession();
   DPRINTF("emul: GEMDRIVE HELLO observed with runnerActive=true → "
           "scheduling relaunch\n");
 }
@@ -871,19 +863,14 @@ static uint32_t emul_devhooksApp(uint16_t commandId, const uint16_t *payload,
 // Thin horizontal dividers between the menu's config groups.
 // Drawn in the gap row above each section header so they don't
 // overlap any character cell. One pixel tall, full-width edge-
-// to-edge. Positions shifted +24 px from the original layout
-// because three GEMDRIVE rows (Ru[n]ner, Phystop, Screenmem) bump
-// every section below them down by three rows (24 px).
+// to-edge.
+#define MENU_DIVIDER_Y(row) ((row) * DISPLAY_TERM_CHAR_HEIGHT - 4)
 static void drawMenuDividers(void) {
   u8g2_t *ref = display_getU8g2Ref();
   u8g2_SetDrawColor(ref, 1);
-  // Above Adv [V]ector (between row 9 GEMDRIVE last and row 11
-  // Adv header).
-  u8g2_DrawHLine(ref, 0, 84, DISPLAY_WIDTH);
-  // Above API Endpoint (between row 12 and row 14).
-  u8g2_DrawHLine(ref, 0, 108, DISPLAY_WIDTH);
-  // Above USB CDC (between row 16 and row 18).
-  u8g2_DrawHLine(ref, 0, 140, DISPLAY_WIDTH);
+  u8g2_DrawHLine(ref, 0, MENU_DIVIDER_Y(MENU_ADV_ROW), DISPLAY_WIDTH);
+  u8g2_DrawHLine(ref, 0, MENU_DIVIDER_Y(MENU_API_ROW), DISPLAY_WIDTH);
+  u8g2_DrawHLine(ref, 0, MENU_DIVIDER_Y(MENU_USBCDC_ROW), DISPLAY_WIDTH);
 }
 
 // status icons via u8g2_font_open_iconic_embedded_1x_t.
@@ -904,10 +891,10 @@ static void drawMenuDividers(void) {
 // drawIconCell helper takes y_top (the row's pixel-top); the
 // glyph baseline is at y_top + 7 (font is 8 px tall).
 #define MENU_ICON_X              (DISPLAY_WIDTH - 12)
-#define MENU_ICON_GEMDRIVE_YTOP  16   // term row 2
-#define MENU_ICON_ADV_YTOP       88   // term row 11 (Ru[n]ner, Phystop, Screenmem add 3 rows)
-#define MENU_ICON_API_YTOP       112  // term row 14
-#define MENU_ICON_USB_YTOP       144  // term row 18
+#define MENU_ICON_GEMDRIVE_YTOP  (MENU_GEMDRIVE_ROW * DISPLAY_TERM_CHAR_HEIGHT)
+#define MENU_ICON_ADV_YTOP       (MENU_ADV_ROW * DISPLAY_TERM_CHAR_HEIGHT)
+#define MENU_ICON_API_YTOP       (MENU_API_ROW * DISPLAY_TERM_CHAR_HEIGHT)
+#define MENU_ICON_USB_YTOP       (MENU_USBCDC_ROW * DISPLAY_TERM_CHAR_HEIGHT)
 #define MENU_ICON_GLYPH_COG          0x42
 #define MENU_ICON_GLYPH_LIGHTBULB    0x4D
 #define MENU_ICON_GLYPH_HARD_DRIVE   0x4C
@@ -923,9 +910,8 @@ static void drawIconCell(uint16_t x, uint16_t y_top, uint8_t glyph,
   // box would leave that row untouched and a hide→show
   // transition would expose a residual top edge of the prior
   // glyph. The four icon positions in this menu all have an
-  // unused pixel row directly above (the hrules at y=84/108/140
-  // sit further up still), so the +1 row of erase margin is
-  // safe.
+  // unused pixel row directly above (the dividers sit 4 px above
+  // each header row), so the +1 row of erase margin is safe.
   u8g2_SetDrawColor(ref, 0);
   u8g2_DrawBox(ref, x, y_top - 1, 8, 9);
   if (visible) {
@@ -1600,6 +1586,7 @@ void cmdGemdrive(const char *arg) {
   showTitle();
   term_printString("\n\n");
   term_printString("Launching DevOps on the Atari ST...\n");
+  unsigned int start = DISPLAY_COMMAND_START;
   if (gemdriveRunnerEnabled()) {
     // The GEMDRIVE Runner: the Runner's interrupt hook stays resident too,
     // the ST boots on through the AUTO folder to the desktop, and
@@ -1611,17 +1598,16 @@ void cmdGemdrive(const char *arg) {
     }
     runnerActive = true;
     runnerTsrMode = true;
-    emul_enterFirmwareMode();
-    SEND_COMMAND_TO_DISPLAY(DISPLAY_COMMAND_START_TSR);
-    return;
+    start = DISPLAY_COMMAND_START_TSR;
+  } else {
+    // Plain GEMDRIVE: take back the accessory the GEMDRIVE Runner wrote, or
+    // GEM would load it with nothing to serve.
+    runner_removeAccessory();
   }
-  // Plain GEMDRIVE: take back the accessory the GEMDRIVE Runner wrote, or GEM
-  // would load it with nothing to serve.
-  runner_removeAccessory();
   // commit firmware mode (debug-byte filter starts
   // accepting captures from this point on).
   emul_enterFirmwareMode();
-  SEND_COMMAND_TO_DISPLAY(DISPLAY_COMMAND_START);
+  SEND_COMMAND_TO_DISPLAY(start);
 }
 
 // [U] launches Runner mode. Same shape as cmdGemdrive but sends
@@ -2329,11 +2315,10 @@ void emul_start() {
     if (runnerRelaunchAtMs != 0 && runnerActive) {
       uint32_t now_ms = (uint32_t)to_ms_since_boot(get_absolute_time());
       if ((int32_t)(now_ms - runnerRelaunchAtMs) >= 0) {
-        DPRINTF("emul: relaunch tick — firing %s\n",
-                runnerTsrMode ? "DISPLAY_COMMAND_START_TSR"
-                              : "DISPLAY_COMMAND_START_RUNNER");
-        SEND_COMMAND_TO_DISPLAY(runnerTsrMode ? DISPLAY_COMMAND_START_TSR
-                                              : DISPLAY_COMMAND_START_RUNNER);
+        unsigned int start = runnerTsrMode ? DISPLAY_COMMAND_START_TSR
+                                           : DISPLAY_COMMAND_START_RUNNER;
+        DPRINTF("emul: relaunch tick — firing start command %u\n", start);
+        SEND_COMMAND_TO_DISPLAY(start);
         runnerRelaunchAtMs = now_ms + 500;  // try again in 500 ms
       }
     }
