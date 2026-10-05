@@ -273,27 +273,6 @@ runner_post_reloc:
 	; chandler), or the RP's in-memory mirror (set by cmdRunner /
 	; the chandler callbacks).
 
-	; --- Step 0: known cwd baseline. Whether we landed here from a
-	; cold boot, a runner reset, or the [U] menu pick, force the
-	; current drive onto the GEMDRIVE-emulated drive and Dsetpath the
-	; cwd back to root. The RP-side mirror clears its cwd on HELLO
-	; below, so relative `runner cd` / `runner run` always resolve
-	; from the same baseline on both sides. TSR mode skips it: TOS
-	; boots on from here, and DEVOPS.ACC keeps its own cwd. ---
-	cmp.w	#CMD_START_TSR, d6
-	beq.s	.skip_cwd_baseline
-	move.l	DRIVE_NUMBER_ADDR, d3
-	move.w	d3, -(sp)
-	move.w	#GEMDOS_Dsetdrv, -(sp)
-	trap	#1
-	addq.l	#4, sp
-
-	pea	root_path(pc)
-	move.w	#GEMDOS_Dsetpath, -(sp)
-	trap	#1
-	addq.l	#6, sp
-.skip_cwd_baseline:
-
 	; --- Step 0.5: install the Advanced Runner
 	; hook at the vector chosen by the RP-side aconfig setting. The
 	; resolved vector address ($70 for VBL or $400 for etv_timer) is
@@ -350,11 +329,29 @@ runner_post_reloc:
 	send_sync RUNNER_CMD_DONE_HELLO, 4
 
 	; TSR mode ends here: back to main.s' tsr_function, which lets TOS
-	; boot on. send_sync restores d6, so it still holds the dispatch.
+	; boot on, and DEVOPS.ACC keeps its own cwd. send_sync restores d6,
+	; so it still holds the dispatch.
 	cmp.w	#CMD_START_TSR, d6
 	bne.s	.foreground
 	rts
 .foreground:
+
+	; --- Known cwd baseline. Whether we landed here from a cold boot,
+	; a runner reset, or the [U] menu pick, force the current drive
+	; onto the GEMDRIVE-emulated drive and Dsetpath the cwd back to
+	; root. The RP-side mirror cleared its cwd on the HELLO above, so
+	; relative `runner cd` / `runner run` always resolve from the same
+	; baseline on both sides. ---
+	move.l	DRIVE_NUMBER_ADDR, d3
+	move.w	d3, -(sp)
+	move.w	#GEMDOS_Dsetdrv, -(sp)
+	trap	#1
+	addq.l	#4, sp
+
+	pea	root_path(pc)
+	move.w	#GEMDOS_Dsetpath, -(sp)
+	trap	#1
+	addq.l	#6, sp
 
 	; --- Step 1: clear screen + paint banner (single Cconws — the
 	; banner_text string leads with VT52 ESC E). ---
@@ -804,7 +801,7 @@ runner_res:
 ;     4     u32   _memtop   ($436)
 ;     8     u32   _phystop  ($42E)
 ;    12     u32   screenmem ($44E)
-;    16     u32   basepage  (_run, see runner_current_basepage)
+;    16     u32   basepage  (_run, see runner_store_basepage)
 ;    20     u16   bank0_kb  (decoded from $FFFF8001 lower nibble)
 ;    22     u16   bank1_kb
 ;
@@ -853,8 +850,7 @@ runner_meminfo:
 	move.l	$436.w, 4(a4)			; _memtop
 	move.l	$42E.w, 8(a4)			; _phystop
 	move.l	$44E.w, 12(a4)			; screenmem (logical screen base)
-	bsr	runner_current_basepage
-	move.l	d0, 16(a4)			; _run (basepage)
+	bsr	runner_store_basepage		; 16(a4) = _run (basepage)
 
 	; Read the MMU configuration register at $FFFF8001. The byte's
 	; lower nibble encodes the (bank0, bank1) sizes. We're already
@@ -993,8 +989,7 @@ adv_meminfo_isr:
 	move.l	$436.w, 4(a4)			; _memtop
 	move.l	$42E.w, 8(a4)			; _phystop
 	move.l	$44E.w, 12(a4)			; _v_bas_ad
-	bsr	runner_current_basepage
-	move.l	d0, 16(a4)			; _run (basepage)
+	bsr	runner_store_basepage		; 16(a4) = _run (basepage)
 	clr.l	20(a4)				; pre-zero bank0/bank1 slots
 
 	; --- Read MMU config byte at $FFFF8001 and decode bank sizes. ---
@@ -1153,29 +1148,28 @@ adv_active_vec:
 	even
 
 ; ---------------------------------------------------------------
-; runner_current_basepage — d0.l = the running process's basepage,
-; read from TOS' _run. $4F2 is _sysbase, a pointer to the OS header,
-; not _run itself. From TOS 1.02 the header's p_run field (offset $28)
-; holds _run's address; TOS 1.00 has no such field and keeps _run at
-; $602C, or at $873C in the Spanish version (country code 4 in bits
-; 1..15 of os_conf). Trashes a0.
+; runner_store_basepage — store the running process's basepage, from
+; TOS' _run, at 16(a4) in the meminfo struct. $4F2 is _sysbase, a
+; pointer to the OS header, not _run itself. From TOS 1.02 the header's
+; p_run field (offset $28) holds _run's address; TOS 1.00 has no such
+; field and keeps _run at $602C, or at $873C in the Spanish version
+; (country code 4 in bits 1..15 of os_conf). Trashes d0/a0.
 ; ---------------------------------------------------------------
-runner_current_basepage:
+runner_store_basepage:
 	move.l	$4F2.w, a0			; _sysbase: the OS header
 	cmp.w	#$0102, 2(a0)			; os_version
-	bcc.s	.cb_p_run
+	bcc.s	.sb_p_run
 	move.w	$1C(a0), d0			; os_conf
+	lea	$602C.w, a0			; _run, TOS 1.00
 	lsr.w	#1, d0
-	cmp.w	#4, d0				; Spain
-	beq.s	.cb_spanish
-	move.l	$602C.w, d0
-	rts
-.cb_spanish:
-	move.l	$873C, d0
-	rts
-.cb_p_run:
+	subq.w	#4, d0				; Spain?
+	bne.s	.sb_read
+	lea	$873C-$602C(a0), a0		; _run, Spanish TOS 1.00
+	bra.s	.sb_read
+.sb_p_run:
 	move.l	$28(a0), a0			; p_run: &_run
-	move.l	(a0), d0
+.sb_read:
+	move.l	(a0), 16(a4)
 	rts
 
 ; ---------------------------------------------------------------
