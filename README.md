@@ -101,9 +101,11 @@ seconds. From there you have four top-level commands:
 | `[X]` | Return to the Booster menu (e.g. to install another app). |
 | any key | Halt the auto-launch countdown so the menu stays up indefinitely while you read it. |
 
-If you don't press anything within ~20 s, the firmware **auto-fires
-[U]Runner** — Runner is the more useful default for unattended
-boots.
+If you don't press anything within ~20 s, the firmware **launches
+the mode you launched last**, so a power cycle comes back the way it
+went. Until you first use `[G]` that is `[U]` Runner, the more useful
+default for unattended boots. The countdown bar names the mode it
+will launch.
 
 ### SELECT button — Booster, reset, factory reset
 
@@ -218,7 +220,7 @@ Select an option: ▌
 | **API Endpoint** | mDNS hostname and the IP DHCP leased. The Wi-Fi icon appears once the network is up; if there's no IP yet (Wi-Fi still associating) the icon is hidden. | (read-only) |
 | **USB CDC (Debug serial)** | `connected` / `disconnected` — live-refreshed as you plug or unplug a USB cable into the Pico. The lightbulb icon flips in lock-step. | (read-only) |
 | **Bottom navigation strip** | Top-level command keys + a one-character prompt area for typing them. | `[G]` / `[U]` / `[X]`. |
-| **Animated countdown bar** | Shrinking white bar; the message "Booting in N s — any key halts" is overlaid in inverted colour so it stays readable both halves. Becomes "Countdown stopped. Press [G], [U] or [X] to continue." once any key has been pressed. | (passive — but pressing any key halts the countdown) |
+| **Animated countdown bar** | Shrinking white bar; the message "Booting Runner in N s — any key halts" (or "Booting GEMDRIVE …", whichever mode it will launch) is overlaid in inverted colour so it stays readable both halves. Becomes "Countdown stopped. Press [G], [U] or [X] to continue." once any key has been pressed. | (passive — but pressing any key halts the countdown) |
 
 ### Picking a hook vector
 
@@ -1022,10 +1024,10 @@ discarded.
 > DPRINTF), it boots *before* the Atari ST. Two side effects:
 > 1. The setup-menu countdown starts running with no ST
 >    attached, and once it elapses (~20 s by default) the
->    firmware auto-commits Runner mode. When you subsequently
->    power the ST, it sees the cartridge already in Runner
->    state and skips the menu — you never get a chance to
->    press `[U]` / `[G]`.
+>    firmware auto-commits the mode launched last (Runner until
+>    you first use `[G]`). When you subsequently power the ST,
+>    it sees the cartridge already in that mode and skips the
+>    menu — you never get a chance to press `[U]` / `[G]`.
 > 2. Any Runner state the Pico accumulated before the ST booted
 >    (a previously-loaded program, a stale cwd, etc.) survives
 >    into the new ST session — the Pico has no way to detect

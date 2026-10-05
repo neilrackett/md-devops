@@ -560,9 +560,9 @@ bool emul_isFirmwareMode(void) {
   return firmwareModeActive;
 }
 
-// Boot countdown — auto-launches Runner mode on the Atari ST when it hits 0
-// (the GEMDRIVE blob is still installed because Runner runs on top of it).
-// Mirrors md-drives-emulator's behavior. Any key press halts it.
+// Boot countdown — when it hits 0, launches whichever of [G] and [U] was
+// launched last (BOOT_MODE; [U] until [G] is first used). Mirrors
+// md-drives-emulator's behavior. Any key press halts it.
 #define BOOT_COUNTDOWN_SECONDS 20
 static int countdown = BOOT_COUNTDOWN_SECONDS;
 static bool haltCountdown = false;
@@ -692,6 +692,22 @@ static bool saveAppSettings(void) {
     haltCountdown = true;
   }
   return saved;
+}
+
+static bool bootModeIsGemdrive(void) {
+  SettingsConfigEntry *entry =
+      settings_find_entry(aconfig_getContext(), ACONFIG_PARAM_BOOT_MODE);
+  return entry != NULL && strcmp(entry->value, "G") == 0;
+}
+
+// Saved only when it changes, so launching the same mode every time costs no
+// flash write.
+static void rememberBootMode(const char *mode) {
+  SettingsConfigEntry *entry =
+      settings_find_entry(aconfig_getContext(), ACONFIG_PARAM_BOOT_MODE);
+  if (entry != NULL && strcmp(entry->value, mode) == 0) return;
+  settings_put_string(aconfig_getContext(), ACONFIG_PARAM_BOOT_MODE, mode);
+  (void)saveAppSettings();
 }
 
 static void refreshSetupInfoLine(void);
@@ -979,9 +995,9 @@ static void drawCountdownBar(int sec_left, int sec_total) {
   // clip windows + colours so each half of the bar reads
   // correctly. SetClipWindow takes (x0, y0, x1, y1) — y1/x1 are
   // exclusive upper bounds.
-  char msg[40];
-  int n = snprintf(msg, sizeof(msg),
-                   "Booting in %d s — any key halts", sec_left);
+  char msg[48];
+  int n = snprintf(msg, sizeof(msg), "Booting %s in %d s — any key halts",
+                   bootModeIsGemdrive() ? "GEMDRIVE" : "Runner", sec_left);
   if (n < 0) msg[0] = '\0';
   u8g2_SetFont(ref, u8g2_font_squeezed_b7_tr);
 
@@ -1586,6 +1602,7 @@ void cmdGemdrive(const char *arg) {
   showTitle();
   term_printString("\n\n");
   term_printString("Launching DevOps on the Atari ST...\n");
+  rememberBootMode("G");
   unsigned int start = DISPLAY_COMMAND_START;
   if (gemdriveRunnerEnabled()) {
     // The GEMDRIVE Runner: the Runner's interrupt hook stays resident too,
@@ -1627,6 +1644,7 @@ void cmdRunner(const char *arg) {
   // "active": true even though the m68k Runner can't write a
   // handshake into the read-only cartridge area.
   runnerActive = true;
+  rememberBootMode("U");
   // commit firmware mode (enables the debug-byte
   // capture filter for the rest of the session).
   emul_enterFirmwareMode();
@@ -2352,12 +2370,16 @@ void emul_start() {
         display_refresh();
         if (countdown <= 0) {
           haltCountdown = true;
-          // Autoboot expired — launch DevOps Runner on the Atari ST. Same
-          // path as pressing [U]. Runner is the more useful default:
-          // it includes the [G] GEMDRIVE behaviour AND the
-          // workstation-driven Runner control surface.
+          // Autoboot expired — launch the mode launched last, by the same
+          // path as pressing its key. [U] until [G] is first used: Runner
+          // is the more useful default, as it includes the [G] GEMDRIVE
+          // behaviour AND the workstation-driven Runner control surface.
           countdownLaunching = true;
-          cmdRunner(NULL);
+          if (bootModeIsGemdrive()) {
+            cmdGemdrive(NULL);
+          } else {
+            cmdRunner(NULL);
+          }
           countdownLaunching = false;
         }
       }
