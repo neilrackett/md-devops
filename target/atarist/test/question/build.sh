@@ -2,8 +2,8 @@
 # — QUESTION.TOS build wrapper.
 #
 # Mirrors target/atarist/build.sh's pattern: invoke `make` inside
-# stcmd's docker so vasm/vlink come from the same image the main
-# cartridge uses. Output: dist/QUESTION.TOS.
+# stcmd's docker so the m68k toolchain comes from the same image the
+# main cartridge uses. Output: dist/QUESTION.TOS.
 #
 # Usage:
 #   ./build.sh             # builds dist/QUESTION.TOS
@@ -16,12 +16,8 @@ cd "$script_dir"
 # STCMD_NO_TTY=1 keeps docker working when invoked from non-TTY
 # contexts (CI, sub-shells). Without it stcmd's `-it` flag aborts
 # with "the input device is not a TTY".
+# set -e stops here if make fails.
 STCMD_NO_TTY=1 ST_WORKING_FOLDER="$script_dir" stcmd make release
-make_status=$?
-if [ "$make_status" -ne 0 ]; then
-    echo "ERROR: m68k make failed (status $make_status)"
-    exit "$make_status"
-fi
 
 echo
 echo "Built: $script_dir/dist/QUESTION.TOS"

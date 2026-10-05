@@ -792,6 +792,27 @@ def cmd_runner_adv_load(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _print_meminfo(parsed: dict) -> None:
+    """The meminfo snapshot, with the ST sysvar each field is read from."""
+    print(f"membottom [$432]  : 0x{parsed.get('membottom', 0):08X}")
+    print(f"memtop    [$436]  : 0x{parsed.get('memtop', 0):08X}")
+    print(f"phystop   [$42E]  : 0x{parsed.get('phystop', 0):08X}")
+    print(f"screenmem [$44E]  : 0x{parsed.get('screenmem', 0):08X}")
+    bp = parsed.get('basepage', 0)
+    if bp:
+        print(f"basepage  [_run]  : 0x{bp:08X}")
+    else:
+        print(f"basepage  [_run]  : 0 (unset)")
+    b0 = parsed.get('bank0_kb', 0)
+    b1 = parsed.get('bank1_kb', 0)
+    if parsed.get('decoded'):
+        print(f"bank 0    [$FF8001 nibble] : {b0} KB")
+        print(f"bank 1    [$FF8001 nibble] : {b1} KB")
+        print(f"total RAM         : {b0 + b1} KB")
+    else:
+        print(f"banks     [$FF8001 nibble] : (unrecognised MMU config)")
+
+
 def cmd_runner_adv_meminfo(args: argparse.Namespace) -> int:
     """POST /api/v1/runner/adv/meminfo — meminfo from inside the VBL ISR."""
     url = base_url(args.host) + "/api/v1/runner/adv/meminfo"
@@ -812,23 +833,7 @@ def cmd_runner_adv_meminfo(args: argparse.Namespace) -> int:
     if args.quiet:
         return EXIT_OK
 
-    print(f"membottom [$432]  : 0x{parsed.get('membottom', 0):08X}")
-    print(f"memtop    [$436]  : 0x{parsed.get('memtop', 0):08X}")
-    print(f"phystop   [$42E]  : 0x{parsed.get('phystop', 0):08X}")
-    print(f"screenmem [$44E]  : 0x{parsed.get('screenmem', 0):08X}")
-    bp = parsed.get('basepage', 0)
-    if bp:
-        print(f"basepage  [_run]  : 0x{bp:08X}")
-    else:
-        print(f"basepage  [_run]  : 0 (unset)")
-    b0 = parsed.get('bank0_kb', 0)
-    b1 = parsed.get('bank1_kb', 0)
-    if parsed.get('decoded'):
-        print(f"bank 0    [$FF8001 nibble] : {b0} KB")
-        print(f"bank 1    [$FF8001 nibble] : {b1} KB")
-        print(f"total RAM         : {b0 + b1} KB")
-    else:
-        print(f"banks     [$FF8001 nibble] : (unrecognised MMU config)")
+    _print_meminfo(parsed)
     return EXIT_OK
 
 
@@ -981,24 +986,7 @@ def cmd_runner_meminfo(args: argparse.Namespace) -> int:
     if args.quiet:
         return EXIT_OK
 
-    # ST sysvar addresses each field is read from (TOS docs).
-    print(f"membottom [$432]  : 0x{parsed.get('membottom', 0):08X}")
-    print(f"memtop    [$436]  : 0x{parsed.get('memtop', 0):08X}")
-    print(f"phystop   [$42E]  : 0x{parsed.get('phystop', 0):08X}")
-    print(f"screenmem [$44E]  : 0x{parsed.get('screenmem', 0):08X}")
-    bp = parsed.get('basepage', 0)
-    if bp:
-        print(f"basepage  [_run]  : 0x{bp:08X}")
-    else:
-        print(f"basepage  [_run]  : 0 (unset)")
-    b0 = parsed.get('bank0_kb', 0)
-    b1 = parsed.get('bank1_kb', 0)
-    if parsed.get('decoded'):
-        print(f"bank 0    [$FF8001 nibble] : {b0} KB")
-        print(f"bank 1    [$FF8001 nibble] : {b1} KB")
-        print(f"total RAM         : {b0 + b1} KB")
-    else:
-        print(f"banks     [$FF8001 nibble] : (unrecognised MMU config)")
+    _print_meminfo(parsed)
     return EXIT_OK
 
 
