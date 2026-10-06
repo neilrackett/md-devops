@@ -1,5 +1,102 @@
 # Changelog
 
+## Unreleased
+
+Run programs from the GEM desktop, feed data to a program while it runs,
+and load programs that GEMDRIVE used to crash on.
+
+### Run programs from the GEM desktop: the GEMDRIVE Runner
+
+`[G]` now brings the Runner along. The Atari boots on through its AUTO
+folder to the desktop as usual, and a desk accessory, `DEVOPS.ACC`, takes
+`runner run`, `load`, `exec`, `unload` and `cd` from there. Programs started
+this way find the AUTO-folder drivers, the cookie jar and GEM already
+loaded; `[U]` starts too early for any of them.
+
+- **On by default.** `Ru[n]ner` in the GEMDRIVE section of the menu shows
+  it, and `[N]` turns it off, which makes `[G]` plain GEMDRIVE as before.
+- **Nothing to install.** The firmware writes `DEVOPS.ACC` to the GEMDRIVE
+  folder itself, and deletes it again when the Runner is off. With
+  GEMDRIVE as `C:`, GEM loads it from there; with another drive letter,
+  copy it to the root of your boot drive.
+- **`runner status`** says whether the accessory has started. After a
+  `runner reset`, wait for it before the next command.
+- **On the Atari**, the accessory's Desk menu entry shows the current
+  directory and the last command with its result.
+- **Limits.** It starts plain TOS programs, not GEM ones, and `runner res`
+  is refused under GEM. GEM gives the accessory no turn while a dialog or
+  menu is open or something is being dragged, so commands wait until then.
+
+Tested on a Mega STE with TOS 2.06, with and without an ACSI2STM hard disk,
+and in Hatari with EmuTOS.
+
+### The AUTO folder runs from GEMDRIVE
+
+With GEMDRIVE as `C:` and no other hard disk, nothing in `C:\AUTO` ran,
+because TOS looked for it on drive A:. GEMDRIVE now makes `C:` the current
+drive as it installs, so AUTO-folder drivers load. With a hard disk whose
+driver takes the boot drive, such as an ACSI2STM, TOS runs that drive's
+AUTO folder instead.
+
+### Programs that GEMDRIVE could not load
+
+- **Programs with an odd file size** crashed in the loader (three bombs) or
+  started corrupted, because the last byte of every odd-length read arrived
+  wrong. They now load, and an odd-length `Fread` gets its last byte right.
+- **Programs with an odd-sized symbol table** bombed in the loader with an
+  address error. They now load, as they do with TOS's own loader.
+- **A read over 4 KB** that did not end on a 4 KB boundary could write up to
+  4 KB past the end of the program's buffer. It now stops where it should.
+- **Files and searches left open by a crashed program** no longer pile up.
+  After a few crashes GEMDRIVE ran out of handles, and GEM could not even
+  load its accessories, until the cartridge was restarted. Every Atari boot
+  now starts clean.
+- **The current directory** reached the Atari with its bytes swapped:
+  `Dgetpath` returned `\STDL` as `S\DT`.
+
+### Feed data to a running program: the rom4 area
+
+1 KB of the cartridge, at `$FA8B00`, that the workstation writes over HTTP
+(`PUT /api/v1/rom4`, or `sidecart rom4 write`) and any program on the
+Atari can read while it runs, in any mode. Programs find it through shared
+variables 20–22. Several writes can go in one request and are applied in
+the order given, so a program can be handed a complete update.
+
+### The boot countdown remembers your choice
+
+When nobody pressed a key, the countdown always started `[U]`. It now
+starts whichever of `[G]` and `[U]` you used last, so a power cycle comes
+back the way it went, and the countdown bar says which: `Booting GEMDRIVE
+in 20 s`. Until you first use `[G]` it is still `[U]`.
+
+### Hold SELECT at power-on to go to the Booster
+
+As in other SidecarTridge apps: hold SELECT while switching on and the
+cartridge goes straight to the Booster, to install another app or update
+this one.
+
+### The Runner
+
+- **`runner meminfo`** gave the address of TOS's ROM header as the running
+  program's basepage. It now reports the real one.
+- **A `load` or `unload` that timed out** was still carried out later, when
+  the Atari next looked, after the API had reported it as failed. It is now
+  withdrawn.
+
+### The API
+
+- **Every 503 reply** carries `Retry-After: 1`, as documented. Three kinds
+  of error left it out.
+- **The Runner's *busy* reply** had an empty body, so the CLI could only
+  print `error (503):`. It now carries the usual error message.
+
+### For developers
+
+- `QUESTION.TOS` is a known-answer test for the Runner: it writes
+  `ANSWER.TXT` containing `42` and exits with 42. `ROM4CHK.TOS` prints the
+  rom4 area to the debug stream.
+- The cartridge code is at 10,190 of its 10,240 bytes.
+
 ## v1.1.0 (2026-09-17) — robustness
 
 No new features. Things that used to fail now work, and when something does
