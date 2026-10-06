@@ -589,6 +589,12 @@ The API is the same, with these differences:
 - `meminfo` is answered by the Advanced Runner hook, as `adv/meminfo`
   is.
 - `res` answers `409 unsupported_in_tsr`.
+- The accessory only runs when GEM gives it a turn, so the commands it
+  serves wait, with the Runner `busy`, while a dialog or alert is open,
+  a menu is pulled down or something is being dragged on the desktop.
+  `load` and `unload` then time out (`504 gateway_timeout`) and are
+  withdrawn; `run`, `exec` and `cd` wait until GEM lets the accessory
+  run.
 - `GET /api/v1/runner` reports `"tsr": true`, and `"accessory"` once
   the accessory has reported in.
 - After `reset` the ST boots back into TSR mode, and the foreground

@@ -962,8 +962,16 @@ mode     : GEMDRIVE Runner (DEVOPS.ACC loaded)
 
 On the ST, the accessory adds **DevOps Runner** to the Desk menu. It
 opens an alert with the Runner's current directory and the last
-command the accessory ran, with its exit code or result. Commands wait
-while the alert is open.
+command the accessory ran, with its exit code or result.
+
+The accessory only runs when GEM gives it a turn, so its commands
+wait while the desktop is busy: while this alert or any other dialog
+is open, a menu is pulled down, or something is being dragged.
+`runner status` shows `busy` until then. `load` and `unload` give up
+after their timeout and are withdrawn, so they do not run later; `run`,
+`exec` and `cd` wait as long as it takes. `runner meminfo`,
+`runner reset` and the `adv` commands come from the interrupt hook and
+are not held up.
 
 With GEMDRIVE as `C:`, GEM starts the accessory from `C:\`, whether
 or not there is another hard disk. With another drive letter, `[G]`
